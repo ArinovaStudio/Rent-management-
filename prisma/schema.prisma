@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  PROPERTY_ADMIN
+  PROPERTY_MANAGER
+}
+
+enum PropertyType {
+  PG
+  APARTMENT
+  FLAT
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AllocationStatus {
+  ACTIVE
+  CHECKED_OUT
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String
+  passwordHash  String?
+  googleId      String?        @unique
+  role          Role           @default(PROPERTY_ADMIN)
+  createdAt     DateTime       @default(now())
+  createdById   String?
+  createdBy     User?          @relation("CreatedUsers", fields: [createdById], references: [id])
+  createdUsers  User[]         @relation("CreatedUsers")
+  refreshTokens RefreshToken[]
+  properties    Property[]     @relation("OwnedProperties")
+}
+
+// One row per issued refresh token. Tokens from the same login share a familyId.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  familyId  String
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([familyId])
+  @@index([userId])
+}
+
+model Property {
+  id          String             @id @default(cuid())
+  name        String
+  description String?
+  type        PropertyType
+  address     String
+  city        String
+  latitude    Float?
+  longitude   Float?
+  bedrooms    Int?
+  bathrooms   Int?
+  areaSqft    Int?
+  floors      Int?
+  sharing     Boolean            @default(false)
+  status      ReviewStatus       @default(PENDING)
+  reviewNote  String?
+  reviewedAt  DateTime?
+  ownerId     String
+  owner       User               @relation("OwnedProperties", fields: [ownerId], references: [id], onDelete: Cascade)
+  rooms       Room[]
+  images      PropertyImage[]
+  documents   PropertyDocument[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+// The unit people get allocated to: a PG room, a bedroom in a sharing flat,
+// or the single "Entire property" row for a non-sharing flat/apartment.
+model Room {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  label      String
+  capacity   Int
+  occupied   Int      @default(0)
+  ac         Boolean  @default(false)
+  rent       Int
+  createdAt  DateTime @default(now())
+  allocations Allocation[]
+
+  @@index([propertyId])
+}
+
+model PropertyImage {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  path       String
+  createdAt  DateTime @default(now())
+
+  @@index([propertyId])
+}
+
+model PropertyDocument {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  name       String
+  path       String
+  createdAt  DateTime @default(now())
+
+  @@index([propertyId])
+}
+
+model Allocation {
+  id              String           @id @default(cuid())
+  roomId          String
+  room            Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  fullName        String
+  email           String?
+  phone           String
+  moveInDate      DateTime
+  monthlyRent     Int
+  securityDeposit Int              @default(0)
+
+  status          AllocationStatus @default(ACTIVE)
+  accessToken     String           @unique
+
+  documents       ResidentDocument[]
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([roomId, status])
+  @@index([phone])
+}
+
+model ResidentDocument {
+  id           String     @id @default(cuid())
+  allocationId String
+  allocation   Allocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+
+  name         String
+  path         String
+  createdAt    DateTime   @default(now())
+
+  @@index([allocationId])
+}
