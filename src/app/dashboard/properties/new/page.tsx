@@ -2,12 +2,13 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageProperties } from "@/lib/permissions";
+import { getVerificationStatus } from "@/lib/owner-status";
 import PropertyForm from "../property-form";
 
 export default async function NewPropertyPage() {
   const me = await getCurrentUser();
   if (!me) redirect("/login");
-  if (!canManageProperties(me.role)) redirect("/dashboard");
+  if (!canManageProperties(me.role, await getVerificationStatus(me.id))) redirect("/dashboard");
 
   // Only the Super Admin gets the "create for" dropdown.
   const owners =

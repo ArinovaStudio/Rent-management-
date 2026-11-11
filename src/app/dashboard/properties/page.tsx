@@ -2,14 +2,15 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageProperties } from "@/lib/permissions";
+import { getVerificationStatus } from "@/lib/owner-status";
 
 const TYPE_LABEL = { PG: "PG", APARTMENT: "Apartment", FLAT: "Flat" } as const;
-const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "Rejected" } as const;
+const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
 
 export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
   const me = await getCurrentUser();
   if (!me) redirect("/login");
-  if (!canManageProperties(me.role)) redirect("/dashboard");
+  if (!canManageProperties(me.role, await getVerificationStatus(me.id))) redirect("/dashboard");
 
   const { saved } = await searchParams;
   const properties = await prisma.property.findMany({
@@ -51,6 +52,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
               </div>
               <div>Occupancy {occ}/{cap}{occ >= cap ? " · no rooms available" : ""}</div>
               {p.status === "REJECTED" && p.reviewNote && <p className="error">Rejected: {p.reviewNote}</p>}
+              {p.status === "NEEDS_MORE_INFO" && p.reviewNote && <p className="error">More information needed: {p.reviewNote}</p>}
               <p style={{ marginBottom: 0 }}><a href={`/dashboard/properties/${p.id}/edit`}>Edit</a></p>
               <a href={`/dashboard/properties/${p.id}/rooms`}>Room status & allocations</a>
             </div>

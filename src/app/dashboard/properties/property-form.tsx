@@ -24,6 +24,8 @@ export type InitialProperty = {
   rooms: { id: string; label: string; capacity: number; ac: boolean; rent: number; occupied: number }[];
   images: { id: string; path: string }[];
   documents: { id: string; name: string; path: string }[];
+  // Only set for a Property Admin editing their own property: shows the ownership proof section.
+  authorityProof?: { name: string } | null;
 };
 
 const blankRoom = (label: string): RoomState => ({ label, capacity: "2", ac: false, rent: "", occupied: "0" });
@@ -79,6 +81,14 @@ export default function PropertyForm({ initial, owners }: {
     setError("");
 
     const fd = new FormData(e.currentTarget);
+    const proofFile = fd.get("authorityProof");
+    const hasProofFile = proofFile instanceof File && proofFile.size > 0;
+    if (!editing && !owners && !hasProofFile) {
+      setError("Upload proof that you own or are authorised to let this property.");
+      setBusy(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     const first = rooms[0];
     const payload = multiRoom
       ? rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.occupied }))
@@ -222,6 +232,26 @@ export default function PropertyForm({ initial, owners }: {
           <div className="thumbs">{previews.map((src) => <div key={src} className="thumb"><img src={src} alt="" /></div>)}</div>
         )}
       </fieldset>
+
+      {(editing ? initial?.authorityProof !== undefined : !owners) && (
+        <fieldset>
+          <legend>Ownership proof</legend>
+          {editing && (
+            <p style={{ margin: 0 }}>
+              {initial?.authorityProof
+                ? <>On file: <a href={`/api/property-authority/${initial.id}`} target="_blank" rel="noreferrer">{initial.authorityProof.name}</a>. Choose a file only to replace it.</>
+                : "No ownership proof on file."}
+            </p>
+          )}
+          <label>
+            Proof of ownership or authority{editing ? "" : " (required for your first property)"}
+            <input type="file" name="authorityProof" accept="application/pdf,image/jpeg,image/png,image/webp" />
+          </label>
+          <p className="muted" style={{ margin: 0 }}>
+            Sale deed, property tax receipt, lease or power of attorney. PDF, JPG, PNG or WebP, up to 10 MB. This is reviewed separately from your account KYC.
+          </p>
+        </fieldset>
+      )}
 
       <fieldset>
         <legend>Legal documents</legend>

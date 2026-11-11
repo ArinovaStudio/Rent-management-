@@ -23,6 +23,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
       },
       images: { orderBy: { createdAt: "asc" } },
       documents: { orderBy: { createdAt: "asc" } },
+      authorityProof: { select: { originalName: true } },
     },
   });
   if (!property || !canEditProperty(me, property)) notFound();
@@ -44,6 +45,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
     rooms: property.rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.allocations.length, })),
     images: property.images.map((i) => ({ id: i.id, path: i.path })),
     documents: property.documents.map((d) => ({ id: d.id, name: d.name, path: d.path })),
+    ...(me.role === "PROPERTY_ADMIN" ? { authorityProof: property.authorityProof ? { name: property.authorityProof.originalName } : null } : {}),
   };
 
   return (
@@ -51,6 +53,9 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
       <h1>Edit property</h1>
       {property.status === "REJECTED" && property.reviewNote && (
         <p className="error">Rejected: {property.reviewNote}</p>
+      )}
+      {property.status === "NEEDS_MORE_INFO" && property.reviewNote && (
+        <p className="error">More information needed: {property.reviewNote}</p>
       )}
       {me.role === "PROPERTY_ADMIN" && (
         <p className="muted" style={{ marginTop: 0 }}>After you save, this property goes back to the Super Admin for review.</p>

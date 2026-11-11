@@ -19,7 +19,7 @@ function LoginForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: f.get("email"), password: f.get("password") }),
     });
-    if (res.ok) return router.push("/dashboard");
+    if (res.ok) return router.push((await res.json()).next ?? "/dashboard");
     setError((await res.json()).error ?? "Something went wrong.");
     setBusy(false);
   }

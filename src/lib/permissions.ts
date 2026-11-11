@@ -1,4 +1,5 @@
 import type { Role } from "./jwt";
+import type { VerificationStatusValue } from "./owner-status";
 
 export const CAN_CREATE: Record<Role, Role[]> = {
   SUPER_ADMIN: ["PROPERTY_ADMIN"],
@@ -18,8 +19,12 @@ export function canDelete(
 }
 
 // ---- Properties ----
-export function canManageProperties(role: Role) {
-  return role === "SUPER_ADMIN" || role === "PROPERTY_ADMIN";
+// `status` is the owner's verification status. Only VERIFIED owners can create properties.
+// Accounts with no owner profile (created before onboarding existed) pass `null` and are not blocked.
+export function canManageProperties(role: Role, status: VerificationStatusValue | null = null) {
+  if (role === "SUPER_ADMIN") return true;
+  if (role !== "PROPERTY_ADMIN") return false;
+  return status === null || status === "VERIFIED";
 }
 
 // Super Admin can edit any property 

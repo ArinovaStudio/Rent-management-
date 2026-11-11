@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { canEditProperty } from "@/lib/permissions";
 import { parsePropertyForm, MAX_IMAGES } from "@/lib/property-form";
-import { saveFile, removeFile } from "@/lib/uploads";
+import { saveFile, removeFile, saveSensitiveFile, removeSensitiveFile } from "@/lib/uploads";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const me = await getCurrentUser();
@@ -23,6 +23,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       },
       images: true,
       documents: true,
+      authorityProof: true,
     },
   });
   if (!property) return NextResponse.json({ error: "Property not found." }, { status: 404 });
@@ -73,6 +74,27 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
+  // Optional replacement of the ownership/authority proof (e.g. after the reviewer asked for more
+  // information). Validated and stored privately before anything else is written.
+  const proofUpload = fd.get("authorityProof");
+  const proofFile = proofUpload instanceof File && proofUpload.size > 0 ? proofUpload : null;
+  let newProof: Awaited<ReturnType<typeof saveSensitiveFile>> | null = null;
+  if (proofFile) {
+    newProof = await saveSensitiveFile(proofFile, `property-authority/${property.ownerId}`);
+    if ("error" in newProof) return NextResponse.json({ error: newProof.error }, { status: 400 });
+  }
+  const proofData =
+    proofFile && newProof && !("error" in newProof)
+      ? {
+          path: newProof.path,
+          originalName: proofFile.name.slice(0, 200),
+          mimeType: newProof.mimeType,
+          sizeBytes: newProof.sizeBytes,
+          sha256: newProof.sha256,
+          uploadedAt: new Date(),
+        }
+      : null;
+
   const imagePaths = await Promise.all(parsed.images.map((f) => saveFile(f, "images", "image")));
   const docRows = await Promise.all(
     parsed.docs.map(async (d) => ({
@@ -87,38 +109,60 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       ? { status: "APPROVED" as const, reviewNote: null, reviewedAt: new Date() }
       : { status: "PENDING" as const, reviewNote: null, reviewedAt: null };
 
-  await prisma.$transaction([
-    prisma.property.update({ where: { id }, data: { ...parsed.data, ...review } }),
-    ...parsed.rooms.map(({ id: roomId, ...r }) => {
-      const existing = roomId
-        ? property.rooms.find((room) => room.id === roomId)
-        : null;
+  // An owner's edit after a rejection or an information request is a resubmission: record it.
+  const resubmit =
+    me.role !== "SUPER_ADMIN" && (property.status === "NEEDS_MORE_INFO" || property.status === "REJECTED");
 
-      return roomId
-        ? prisma.room.update({
-            where: { id: roomId },
-            data: {
-              ...r,
-              occupied: existing?.allocations.length ?? 0,
-            },
-          })
-        : prisma.room.create({
-            data: {
-              ...r,
-              occupied: 0,
-              propertyId: id,
-            },
-          });
-    }),
-    prisma.room.deleteMany({ where: { id: { in: dropped.map((r) => r.id) } } }),
-    prisma.propertyImage.deleteMany({ where: { id: { in: removeImages.map((i) => i.id) } } }),
-    prisma.propertyDocument.deleteMany({ where: { id: { in: removeDocs.map((d) => d.id) } } }),
-    prisma.propertyImage.createMany({ data: imagePaths.map((path) => ({ propertyId: id, path })) }),
-    prisma.propertyDocument.createMany({ data: docRows.map((d) => ({ ...d, propertyId: id })) }),
-  ]);
+  try {
+    await prisma.$transaction([
+      prisma.property.update({ where: { id }, data: { ...parsed.data, ...review } }),
+      ...(proofData
+        ? [prisma.propertyAuthorityProof.upsert({
+            where: { propertyId: id },
+            create: { ...proofData, propertyId: id },
+            update: proofData,
+          })]
+        : []),
+      ...(resubmit
+        ? [prisma.auditEvent.create({
+            data: { subjectType: "PROPERTY", subjectId: id, actorId: me.id, action: "RESUBMIT", fromStatus: property.status, toStatus: "PENDING", note: proofData ? "Replaced ownership proof" : null },
+          })]
+        : []),
+      ...parsed.rooms.map(({ id: roomId, ...r }) => {
+        const existing = roomId
+          ? property.rooms.find((room) => room.id === roomId)
+          : null;
+
+        return roomId
+          ? prisma.room.update({
+              where: { id: roomId },
+              data: {
+                ...r,
+                occupied: existing?.allocations.length ?? 0,
+              },
+            })
+          : prisma.room.create({
+              data: {
+                ...r,
+                occupied: 0,
+                propertyId: id,
+              },
+            });
+      }),
+      prisma.room.deleteMany({ where: { id: { in: dropped.map((r) => r.id) } } }),
+      prisma.propertyImage.deleteMany({ where: { id: { in: removeImages.map((i) => i.id) } } }),
+      prisma.propertyDocument.deleteMany({ where: { id: { in: removeDocs.map((d) => d.id) } } }),
+      prisma.propertyImage.createMany({ data: imagePaths.map((path) => ({ propertyId: id, path })) }),
+      prisma.propertyDocument.createMany({ data: docRows.map((d) => ({ ...d, propertyId: id })) }),
+    ]);
+  } catch (err) {
+    if (proofData) await removeSensitiveFile(proofData.path);
+    throw err;
+  }
 
   // Delete the old files only after the database change went through.
   await Promise.all([...removeImages, ...removeDocs].map((f) => removeFile(f.path)));
+  if (proofData && property.authorityProof) await removeSensitiveFile(property.authorityProof.path);
 
   return NextResponse.json({ id, status: review.status });
 }

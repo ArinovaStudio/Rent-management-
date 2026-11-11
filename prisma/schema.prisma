@@ -23,11 +23,50 @@ enum ReviewStatus {
   PENDING
   APPROVED
   REJECTED
+  NEEDS_MORE_INFO
 }
 
 enum AllocationStatus {
   ACTIVE
   CHECKED_OUT
+}
+
+enum AccountType {
+  INDIVIDUAL
+  COMPANY
+}
+
+// Owner onboarding / KYC lifecycle. New owners start at CONTACT_PENDING.
+enum VerificationStatus {
+  CONTACT_PENDING
+  KYC_PENDING
+  NEEDS_MORE_INFO
+  VERIFIED
+  RESTRICTED
+  REJECTED
+}
+
+enum IdType {
+  AADHAAR
+  PAN
+  PASSPORT
+  VOTER_ID
+  DRIVING_LICENSE
+}
+
+enum PropertyRelationship {
+  OWNER
+  CO_OWNER
+  LEASEHOLDER
+  POWER_OF_ATTORNEY
+  AUTHORIZED_MANAGER
+}
+
+enum SensitiveDocumentType {
+  ID_DOCUMENT
+  ADDRESS_PROOF
+  COMPANY_REGISTRATION
+  AUTHORITY_PROOF
 }
 
 model User {
@@ -36,13 +75,92 @@ model User {
   name          String
   passwordHash  String?
   googleId      String?        @unique
+  // Set when the email is proven to belong to the user (Google sign-in today, email OTP in Phase 2).
+  emailVerifiedAt DateTime?
   role          Role           @default(PROPERTY_ADMIN)
   createdAt     DateTime       @default(now())
   createdById   String?
   createdBy     User?          @relation("CreatedUsers", fields: [createdById], references: [id])
   createdUsers  User[]         @relation("CreatedUsers")
   refreshTokens RefreshToken[]
+  emailOtps     EmailOtp[]
   properties    Property[]     @relation("OwnedProperties")
+  // Null for accounts created before owner onboarding existed, for Super Admins and for managers.
+  ownerProfile  OwnerProfile?
+}
+
+// Everything we know about an owner from onboarding. Sensitive data lives here and in
+// SensitiveDocument, never on User. Full ID numbers are NOT stored, only a masked form.
+model OwnerProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Step 1: basic details
+  accountType     AccountType @default(INDIVIDUAL)
+  legalName       String // person's legal name, or the registered company name
+  phone           String? // E.164, e.g. +919876543210. Null until step 1 is saved (Google sign-ups).
+  phoneVerifiedAt DateTime?
+
+  // Step 2: identity
+  idType         IdType?
+  idNumberMasked String? // e.g. XXXXXXXX1234
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  state          String?
+  postalCode     String?
+  // Company only
+  companyRegistrationNumber String?
+  gstin                     String?
+  signatoryName             String?
+  signatoryDesignation      String?
+
+  // Step 3: property relationship and consents (timestamps are set by the server)
+  propertyRelationship        PropertyRelationship?
+  authorityDetails            String?
+  termsAcceptedAt             DateTime?
+  termsVersion                String?
+  privacyAcceptedAt           DateTime?
+  privacyVersion              String?
+  kycConsentAt                DateTime?
+  kycConsentVersion           String?
+  authorityDeclaredAt         DateTime?
+  authorityDeclarationVersion String?
+
+  // Onboarding progress: number of wizard steps saved (0-3). Used to resume.
+  completedSteps        Int       @default(0)
+  onboardingCompletedAt DateTime?
+
+  verificationStatus VerificationStatus @default(CONTACT_PENDING)
+  statusUpdatedAt    DateTime           @default(now())
+  // Latest KYC review decision (full history is in AuditEvent)
+  reviewedById       String?
+  reviewedAt         DateTime?
+  reviewNote         String?
+
+  documents SensitiveDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([verificationStatus])
+}
+
+// KYC files. The bytes live outside the public uploads folder (see lib/uploads.ts, SENSITIVE_ROOT).
+model SensitiveDocument {
+  id             String                @id @default(cuid())
+  ownerProfileId String
+  ownerProfile   OwnerProfile          @relation(fields: [ownerProfileId], references: [id], onDelete: Cascade)
+  type           SensitiveDocumentType
+  path           String // relative to SENSITIVE_ROOT
+  originalName   String
+  mimeType       String
+  sizeBytes      Int
+  sha256         String
+  uploadedAt     DateTime              @default(now())
+
+  @@index([ownerProfileId, type])
 }
 
 // One row per issued refresh token. Tokens from the same login share a familyId.
@@ -78,11 +196,14 @@ model Property {
   status      ReviewStatus       @default(PENDING)
   reviewNote  String?
   reviewedAt  DateTime?
+  reviewedById String?
   ownerId     String
   owner       User               @relation("OwnedProperties", fields: [ownerId], references: [id], onDelete: Cascade)
   rooms       Room[]
   images      PropertyImage[]
   documents   PropertyDocument[]
+  // Proof of ownership/authority. Kept apart from the owner's personal KYC documents.
+  authorityProof PropertyAuthorityProof?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
@@ -162,4 +283,61 @@ model ResidentDocument {
   createdAt    DateTime   @default(now())
 
   @@index([allocationId])
+}
+
+// Email OTP. Only a hash of the code is stored. Used for the owner's email verification.
+model EmailOtp {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// Who opened which KYC document. Never holds ID numbers.
+model DocumentAccessLog {
+  id         String   @id @default(cuid())
+  documentId String
+  actorId    String
+  actorRole  Role
+  action     String // VIEW
+  createdAt  DateTime @default(now())
+
+  @@index([documentId])
+  @@index([actorId])
+}
+
+// Ownership/authorization proof for a property. Bytes live under SENSITIVE_ROOT/properties/<id>.
+model PropertyAuthorityProof {
+  id           String   @id @default(cuid())
+  propertyId   String   @unique
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  path         String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  uploadedAt   DateTime @default(now())
+}
+
+// One row per review decision or status change. Covers KYC review history, property approval
+// history, status history and Super Admin action logs. Notes may be shown to the owner.
+model AuditEvent {
+  id          String   @id @default(cuid())
+  subjectType String // OWNER_KYC | PROPERTY
+  subjectId   String // OwnerProfile.id or Property.id
+  actorId     String
+  action      String // APPROVE | REJECT | REQUEST_INFO | RESTRICT | RESUBMIT
+  fromStatus  String
+  toStatus    String
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([subjectType, subjectId, createdAt])
+  @@index([actorId])
 }
