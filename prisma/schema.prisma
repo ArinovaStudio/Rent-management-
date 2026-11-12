@@ -69,6 +69,20 @@ enum SensitiveDocumentType {
   AUTHORITY_PROOF
 }
 
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum IssuePriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+
 model User {
   id            String         @id @default(cuid())
   email         String         @unique
@@ -85,6 +99,8 @@ model User {
   refreshTokens RefreshToken[]
   emailOtps     EmailOtp[]
   properties    Property[]     @relation("OwnedProperties")
+  managedProperties PropertyManager[] @relation("ManagedProperties")
+  reportedIssues    Issue[]           @relation("ReportedIssues")
   // Null for accounts created before owner onboarding existed, for Super Admins and for managers.
   ownerProfile  OwnerProfile?
 }
@@ -204,8 +220,36 @@ model Property {
   documents   PropertyDocument[]
   // Proof of ownership/authority. Kept apart from the owner's personal KYC documents.
   authorityProof PropertyAuthorityProof?
+  // --- Listing details ---
+  category            String?
+  district            String?
+  state               String?
+  yearBuilt           Int?
+  developer           String?
+  price               Int?
+  serviceCharge       Int?
+  builtUpAreaSqm      Float?
+  plotSizeSqm         Float?
+  pricePerSqm         Int?
+  shortDescription    String?
+  videoUrl            String?
+  videoPath           String?
+  parkingSpaces       Int?
+  furnishing          String?
+  facing              String?
+  titleDeedNumber     String?
+  handoverDate        DateTime?
+  roomLayout          Json      @default("[]")
+  bathroomLayout      Json      @default("[]")
+  amenities           String[]  @default([])
+  features            String[]  @default([])
+  nearbyPlaces        Json      @default("[]")
+  isPublished         Boolean   @default(true)
+  featured            Boolean   @default(false)
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
+  managers PropertyManager[]
+  issues   Issue[]
 
   @@index([ownerId])
   @@index([status])
@@ -224,6 +268,7 @@ model Room {
   rent       Int
   createdAt  DateTime @default(now())
   allocations Allocation[]
+  issues Issue[]
 
   @@index([propertyId])
 }
@@ -234,6 +279,7 @@ model PropertyImage {
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   path       String
   createdAt  DateTime @default(now())
+  sortOrder  Int      @default(0)
 
   @@index([propertyId])
 }
@@ -340,4 +386,40 @@ model AuditEvent {
 
   @@index([subjectType, subjectId, createdAt])
   @@index([actorId])
+}
+
+
+// One row per (property, manager). A manager can have many rows, a property can have many managers.
+model PropertyManager {
+  id           String   @id @default(cuid())
+  propertyId   String
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  managerId    String
+  manager      User     @relation("ManagedProperties", fields: [managerId], references: [id], onDelete: Cascade)
+  assignedById String
+  createdAt    DateTime @default(now())
+
+  @@unique([propertyId, managerId])
+  @@index([managerId])
+}
+
+model Issue {
+  id             String        @id @default(cuid())
+  propertyId     String
+  property       Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  roomId         String?
+  room           Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  reportedById   String
+  reportedBy     User          @relation("ReportedIssues", fields: [reportedById], references: [id], onDelete: Cascade)
+  title          String
+  description    String
+  priority       IssuePriority @default(MEDIUM)
+  status         IssueStatus   @default(OPEN)
+  resolutionNote String?
+  resolvedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([propertyId, status])
+  @@index([reportedById])
 }

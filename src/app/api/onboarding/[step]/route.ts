@@ -153,8 +153,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ step: st
     if (!types.has("ID_DOCUMENT") || !types.has("ADDRESS_PROOF")) {
       return NextResponse.json({ error: "Go back to step 2 and upload your ID document and address proof." }, { status: 409 });
     }
-    const body = await req.json().catch(() => null);
-    const parsed = validateStep3(body && typeof body === "object" ? body : {});
+    const rawBody = await req.json().catch(() => null);
+    const body: Record<string, unknown> = rawBody && typeof rawBody === "object" ? { ...rawBody } : {};
+    // Managers don't choose a relationship: they act for the owner on their admin's appointment.
+    if (me.role === "PROPERTY_MANAGER") {
+      const u = await prisma.user.findUnique({ where: { id: me.id }, select: { createdById: true } });
+      const creator = u?.createdById
+        ? await prisma.user.findUnique({ where: { id: u.createdById }, select: { name: true } })
+        : null;
+      body.propertyRelationship = "AUTHORIZED_MANAGER";
+      body.authorityDetails = `Appointed as property manager by ${creator?.name ?? "the property admin"}.`;
+    }
+    const parsed = validateStep3(body);
     if (!parsed.ok) return bad(parsed.fieldErrors);
 
     // Timestamps come from the server clock, versions from the server's current policy set.

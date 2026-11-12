@@ -16,10 +16,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const doc = await prisma.sensitiveDocument.findUnique({
     where: { id },
-    include: { ownerProfile: { select: { userId: true } } },
+    include: { ownerProfile: { select: { userId: true, user: { select: { createdById: true } } } } },
   });
   // Same answer whether it doesn't exist or isn't yours, so ids can't be probed
-  if (!doc || (me.role !== "SUPER_ADMIN" && doc.ownerProfile.userId !== me.id)) {
+  const allowed = !!doc && (me.role === "SUPER_ADMIN" || doc.ownerProfile.userId === me.id || doc.ownerProfile.user.createdById === me.id);
+  if (!doc || !allowed) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 

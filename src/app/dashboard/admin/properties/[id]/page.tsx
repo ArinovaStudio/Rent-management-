@@ -17,7 +17,7 @@ export default async function PropertyReview({ params }: { params: Promise<{ id:
     where: { id },
     include: {
       owner: { select: { name: true, email: true, ownerProfile: { select: { id: true, verificationStatus: true } } } },
-      rooms: true, images: true, documents: true, authorityProof: true,
+      rooms: true, images: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }, documents: true, authorityProof: true,
     },
   });
   if (!p) notFound();

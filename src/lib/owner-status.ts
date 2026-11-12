@@ -21,7 +21,7 @@ export const STATUS_LABEL: Record<VerificationStatusValue, string> = {
 export const SMS_VERIFICATION_ENABLED = false;
 
 export const STATUS_HELP: Record<VerificationStatusValue, string> = {
-  CONTACT_PENDING: "Verify your email to move on to KYC review.",
+  CONTACT_PENDING: "Verify your email to continue",
   KYC_PENDING: "Your details are with our team for review. You can't add properties until you're verified.",
   NEEDS_MORE_INFO: "We need more information from you. Re-upload your ID document below, then wait for review.",
   VERIFIED: "Your account is fully verified.",
@@ -36,15 +36,27 @@ export const STATUS_HELP: Record<VerificationStatusValue, string> = {
 export async function syncVerificationStatus(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { emailVerifiedAt: true, ownerProfile: true },
+    select: { emailVerifiedAt: true, createdById: true, ownerProfile: true },
   });
   const p = user?.ownerProfile;
   if (!user || !p || p.verificationStatus !== "CONTACT_PENDING") return;
   if (user.emailVerifiedAt && (!SMS_VERIFICATION_ENABLED || p.phoneVerifiedAt) && p.onboardingCompletedAt) {
-    await prisma.ownerProfile.updateMany({
+    // Accounts created by an admin were vouched for by that admin when the documents were collected,
+    // so confirming the email completes their verification. Self-registered owners go to KYC review.
+    const vouchedBy = user.createdById;
+    const res = await prisma.ownerProfile.updateMany({
       where: { id: p.id, verificationStatus: "CONTACT_PENDING" },
-      data: { verificationStatus: "KYC_PENDING", statusUpdatedAt: new Date() },
+      data: { verificationStatus: vouchedBy ? "VERIFIED" : "KYC_PENDING", statusUpdatedAt: new Date() },
     });
+    if (vouchedBy && res.count === 1) {
+      await prisma.auditEvent.create({
+        data: {
+          subjectType: "OWNER_KYC", subjectId: p.id, actorId: vouchedBy, action: "APPROVE",
+          fromStatus: "CONTACT_PENDING", toStatus: "VERIFIED",
+          note: "Verified automatically on email confirmation. Account was created and vouched for by an admin.",
+        },
+      });
+    }
   }
 }
 

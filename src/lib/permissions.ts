@@ -2,7 +2,7 @@ import type { Role } from "./jwt";
 import type { VerificationStatusValue } from "./owner-status";
 
 export const CAN_CREATE: Record<Role, Role[]> = {
-  SUPER_ADMIN: ["PROPERTY_ADMIN"],
+  SUPER_ADMIN: ["PROPERTY_ADMIN", "PROPERTY_MANAGER"],
   PROPERTY_ADMIN: ["PROPERTY_MANAGER"],
   PROPERTY_MANAGER: [],
 };
@@ -33,3 +33,12 @@ export function canEditProperty(me: { id: string; role: Role }, property: { owne
   if (me.role === "SUPER_ADMIN") return true;
   return me.role === "PROPERTY_ADMIN" && property.ownerId === me.id;
 }
+
+// ---- Property field access ----
+// Anything not listed: writable by Super Admin and Property Admin, readable by every role.
+const WRITE_ROLES: Record<string, Role[]> = { featured: ["SUPER_ADMIN"] };
+const READ_ROLES: Record<string, Role[]> = {
+  titleDeedNumber: ["SUPER_ADMIN", "PROPERTY_ADMIN"],
+};
+export const canWriteField = (role: Role, field: string) => (WRITE_ROLES[field] ?? ["SUPER_ADMIN", "PROPERTY_ADMIN"]).includes(role);
+export const canReadField = (role: Role, field: string) => (READ_ROLES[field] ?? ["SUPER_ADMIN", "PROPERTY_ADMIN", "PROPERTY_MANAGER"]).includes(role);

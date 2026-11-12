@@ -2,7 +2,8 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-import { canEditProperty } from "@/lib/permissions";
+// import { canEditProperty } from "@/lib/permissions";
+import { canOperateProperty } from "@/lib/property-access";
 import AllocationForm from "./allocation-form";
 import AllocationActions from "./allocation-actions";
 
@@ -33,7 +34,7 @@ export default async function PropertyRoomsPage({
     },
   });
 
-  if (!property || !canEditProperty(me, property)) {
+  if (!property || !(await canOperateProperty(me, property))) {
     notFound();
   }
 

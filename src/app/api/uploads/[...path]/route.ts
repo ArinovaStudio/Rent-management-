@@ -12,13 +12,14 @@ import { UPLOAD_ROOT, MIME_BY_EXT } from "@/lib/uploads";
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path: segments } = await params;
   const abs = path.resolve(UPLOAD_ROOT, ...segments);
+  
   if (!abs.startsWith(UPLOAD_ROOT + path.sep)) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
   const contentType = MIME_BY_EXT[path.extname(abs).toLowerCase()];
   if (!contentType) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
-  const isPublic = segments[0] === "images";
+  const isPublic = segments[0] === "images" || segments[0] === "videos";
   if (!isPublic) {
     const me = await getCurrentUser();
     if (!me) {

@@ -36,7 +36,10 @@ export default async function Dashboard() {
             </ul>
           )}
           {profile.reviewNote && ["NEEDS_MORE_INFO", "REJECTED", "RESTRICTED"].includes(profile.verificationStatus) && (
-            <p style={{ margin: "8px 0 0" }}>Note from the reviewer: {profile.reviewNote}</p>
+            // <p style={{ margin: "8px 0 0" }}>Note from the reviewer: {profile.reviewNote}</p>
+            <p style={{ margin: "8px 0 0" }}>
+              Note from the reviewer ({profile.statusUpdatedAt.toLocaleDateString("en-IN")}): {profile.reviewNote}
+            </p>
           )}
           <VerificationActions
             needsEmail={profile.verificationStatus === "CONTACT_PENDING" && !user.emailVerifiedAt}
@@ -53,9 +56,8 @@ export default async function Dashboard() {
       {user.role !== "PROPERTY_MANAGER" && (
         <p><a href="/dashboard/users">Manage users</a></p>
       )}
-      {user.role !== "PROPERTY_MANAGER" && (
-        <p><a href="/dashboard/properties">Properties</a></p>
-      )}
+      <p><a href="/dashboard/properties">Properties</a></p>
+      <p><a href="/dashboard/issues">Issues</a></p>
       {user.role === "PROPERTY_ADMIN" && profile && profile.verificationStatus !== "VERIFIED" && (
         <p className="muted">You can add properties once your account is verified.</p>
       )}

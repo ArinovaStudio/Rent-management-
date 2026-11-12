@@ -71,6 +71,7 @@ export default async function KycReview({ params }: { params: Promise<{ id: stri
 
       <fieldset>
         <legend>Property relationship and declarations</legend>
+        {!p.onboardingCompletedAt && <p className="error">This person hasn&apos;t completed their own declarations yet.</p>}
         <p>Relationship: {p.propertyRelationship ? RELATIONSHIP_LABEL[p.propertyRelationship] : "—"}</p>
         {p.authorityDetails && <p>Authority details: {p.authorityDetails}</p>}
         <ul style={{ paddingLeft: 18, margin: 0 }}>

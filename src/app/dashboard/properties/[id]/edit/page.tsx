@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { canEditProperty } from "@/lib/permissions";
 import PropertyForm from "../../property-form";
+import { listingForClient } from "@/lib/property-fields";
+import { listedByInfo } from "@/lib/property-fields";
 
 export default async function EditPropertyPage({ params }: { params: Promise<{ id: string }> }) {
   const me = await getCurrentUser();
@@ -21,9 +23,15 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
           },
         },
       },
-      images: { orderBy: { createdAt: "asc" } },
+      images: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
       documents: { orderBy: { createdAt: "asc" } },
       authorityProof: { select: { originalName: true } },
+      owner: {
+        select: {
+          name: true, email: true, role: true,
+          ownerProfile: { select: { legalName: true, phone: true, accountType: true } },
+        },
+      }
     },
   });
   if (!property || !canEditProperty(me, property)) notFound();
@@ -46,6 +54,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
     images: property.images.map((i) => ({ id: i.id, path: i.path })),
     documents: property.documents.map((d) => ({ id: d.id, name: d.name, path: d.path })),
     ...(me.role === "PROPERTY_ADMIN" ? { authorityProof: property.authorityProof ? { name: property.authorityProof.originalName } : null } : {}),
+    listing: listingForClient(property, me.role)
   };
 
   return (
@@ -60,7 +69,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
       {me.role === "PROPERTY_ADMIN" && (
         <p className="muted" style={{ marginTop: 0 }}>After you save, this property goes back to the Super Admin for review.</p>
       )}
-      <PropertyForm initial={initial} />
+      <PropertyForm initial={initial} role={me.role} listedBy={listedByInfo(property.owner)}/>
       <p className="muted"><a href="/dashboard/properties">Back to properties</a></p>
     </main>
   );

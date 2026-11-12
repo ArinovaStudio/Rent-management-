@@ -10,11 +10,14 @@ const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "R
 export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
   const me = await getCurrentUser();
   if (!me) redirect("/login");
-  if (!canManageProperties(me.role, await getVerificationStatus(me.id))) redirect("/dashboard");
+  
+  const isManager = me.role === "PROPERTY_MANAGER";
+  if (!isManager && !canManageProperties(me.role, await getVerificationStatus(me.id))) redirect("/dashboard");
+  // if (!canManageProperties(me.role, await getVerificationStatus(me.id))) redirect("/dashboard");
 
   const { saved } = await searchParams;
   const properties = await prisma.property.findMany({
-    where: me.role === "SUPER_ADMIN" ? {} : { ownerId: me.id },
+    where: me.role === "SUPER_ADMIN" ? {} : isManager ? { managers: { some: { managerId: me.id } } } : { ownerId: me.id },
     include: {
       rooms: {
         include: {
@@ -34,7 +37,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
       <h1>Properties</h1>
       {saved === "pending" && <p className="notice">Saved. It will go live once the Super Admin approves it.</p>}
       {saved === "live" && <p className="notice">Saved.</p>}
-      <p><a className="button" href="/dashboard/properties/new">Add property</a></p>
+      {!isManager && <p><a className="button" href="/dashboard/properties/new">Add property</a></p>}
 
       {properties.length === 0 ? (
         <p className="muted">No properties yet.</p>
@@ -53,8 +56,11 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
               <div>Occupancy {occ}/{cap}{occ >= cap ? " · no rooms available" : ""}</div>
               {p.status === "REJECTED" && p.reviewNote && <p className="error">Rejected: {p.reviewNote}</p>}
               {p.status === "NEEDS_MORE_INFO" && p.reviewNote && <p className="error">More information needed: {p.reviewNote}</p>}
-              <p style={{ marginBottom: 0 }}><a href={`/dashboard/properties/${p.id}/edit`}>Edit</a></p>
-              <a href={`/dashboard/properties/${p.id}/rooms`}>Room status & allocations</a>
+              <p style={{ marginBottom: 0 }}>
+                {!isManager && <><a href={`/dashboard/properties/${p.id}/edit`}>Edit</a>{" · "}</>}
+                {!isManager && <><a href={`/dashboard/properties/${p.id}/managers`}>Managers</a>{" · "}</>}
+                <a href={`/dashboard/properties/${p.id}/rooms`}>Room status & allocations</a>
+              </p>
             </div>
           );
         })

@@ -14,32 +14,36 @@ const IMAGE_TYPES: Record<string, string> = {
   "image/png": ".png",
   "image/webp": ".webp",
 };
+
 const DOC_TYPES: Record<string, string> = { ...IMAGE_TYPES, "application/pdf": ".pdf" };
+const VIDEO_TYPES: Record<string, string> = { "video/mp4": ".mp4", "video/webm": ".webm" };
+const TYPES_BY_KIND = { image: IMAGE_TYPES, doc: DOC_TYPES, video: VIDEO_TYPES };
+const KIND_LABEL = { image: "JPG, PNG or WebP", doc: "PDF, JPG, PNG or WebP", video: "MP4 or WebM" };
+const MAX_MB = { image: 5, doc: 10, video: 50 };
 
 export const MIME_BY_EXT: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".png": "image/png",
   ".webp": "image/webp",
   ".pdf": "application/pdf",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
 };
 
-export type FileKind = "image" | "doc";
+export type FileKind = "image" | "doc" | "video";
 
 // Returns an error message, or null if the file is fine.
+// Returns an error message, or null if the file is fine.
 export function checkFile(file: File, kind: FileKind): string | null {
-  const types = kind === "image" ? IMAGE_TYPES : DOC_TYPES;
-  if (!types[file.type]) {
-    return `${file.name}: only ${kind === "image" ? "JPG, PNG or WebP" : "PDF, JPG, PNG or WebP"} files are allowed.`;
-  }
-  const max = kind === "image" ? 5 : 10;
-  if (file.size > max * 1024 * 1024) return `${file.name}: file is larger than ${max} MB.`;
+  if (!TYPES_BY_KIND[kind][file.type]) return `${file.name}: only ${KIND_LABEL[kind]} files are allowed.`;
+  if (file.size > MAX_MB[kind] * 1024 * 1024) return `${file.name}: file is larger than ${MAX_MB[kind]} MB.`;
   return null;
 }
 
 // Saves the file and returns its path relative to the uploads folder, e.g. "images/ab12.jpg".
 // The extension comes from our own whitelist, never from the uploaded file name.
 export async function saveFile(file: File, folder: string, kind: FileKind) {
-  const ext = (kind === "image" ? IMAGE_TYPES : DOC_TYPES)[file.type];
+  const ext = TYPES_BY_KIND[kind][file.type];
   const rel = `${folder}/${randomBytes(12).toString("hex")}${ext}`;
   const abs = path.join(UPLOAD_ROOT, rel);
   await mkdir(path.dirname(abs), { recursive: true });

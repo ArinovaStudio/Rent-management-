@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { canEditProperty } from "@/lib/permissions";
-import { parsePropertyForm, MAX_IMAGES } from "@/lib/property-form";
+import { parsePropertyForm, MAX_IMAGES, imageOrder } from "@/lib/property-form";
 import { saveFile, removeFile, saveSensitiveFile, removeSensitiveFile } from "@/lib/uploads";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -33,7 +33,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   const fd = await req.formData().catch(() => null);
   if (!fd) return NextResponse.json({ error: "Invalid form data." }, { status: 400 });
-  const parsed = parsePropertyForm(fd);
+  const parsed = parsePropertyForm(fd, me.role);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
   // Images: existing ones minus removed ones plus new ones must stay within the limit.
@@ -102,6 +102,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       path: await saveFile(d.file, `docs/${property.id}`, "doc"),
     }))
   );
+  
+  const keptImages = property.images.filter((i) => !removeImages.includes(i));
+  const order = imageOrder(parsed.imageOrder, keptImages.map((i) => i.id), imagePaths.length);
+  let videoPath: string | null | undefined; // undefined = leave the video as it is
+  if (parsed.videoFile) videoPath = await saveFile(parsed.videoFile, "videos", "video");
+  else if (parsed.removeVideo) videoPath = null;
 
   // Super Admin edits stay approved. A Property Admin's edit goes back to review.
   const review =
@@ -115,7 +121,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   try {
     await prisma.$transaction([
-      prisma.property.update({ where: { id }, data: { ...parsed.data, ...review } }),
+      prisma.property.update({
+        where: { id },
+        data: { ...parsed.data, ...review, ...(videoPath !== undefined ? { videoPath } : {}) },
+      }),
       ...(proofData
         ? [prisma.propertyAuthorityProof.upsert({
             where: { propertyId: id },
@@ -152,17 +161,22 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       prisma.room.deleteMany({ where: { id: { in: dropped.map((r) => r.id) } } }),
       prisma.propertyImage.deleteMany({ where: { id: { in: removeImages.map((i) => i.id) } } }),
       prisma.propertyDocument.deleteMany({ where: { id: { in: removeDocs.map((d) => d.id) } } }),
-      prisma.propertyImage.createMany({ data: imagePaths.map((path) => ({ propertyId: id, path })) }),
+      ...keptImages.map((i) => prisma.propertyImage.update({ where: { id: i.id }, data: { sortOrder: order.indexOf(i.id) } })),
+      prisma.propertyImage.createMany({
+        data: imagePaths.map((path, i) => ({ propertyId: id, path, sortOrder: order.indexOf(`new:${i}`) })),
+      }),
       prisma.propertyDocument.createMany({ data: docRows.map((d) => ({ ...d, propertyId: id })) }),
     ]);
   } catch (err) {
     if (proofData) await removeSensitiveFile(proofData.path);
+    if (typeof videoPath === "string") await removeFile(videoPath);
     throw err;
   }
 
   // Delete the old files only after the database change went through.
   await Promise.all([...removeImages, ...removeDocs].map((f) => removeFile(f.path)));
   if (proofData && property.authorityProof) await removeSensitiveFile(property.authorityProof.path);
-
+  if (videoPath !== undefined && property.videoPath) await removeFile(property.videoPath);
+  
   return NextResponse.json({ id, status: review.status });
 }

@@ -35,8 +35,10 @@ export async function reviewOwner(adminId: string, profileId: string, action: Re
   if (!profile) return fail("Application not found.", 404);
   const from = profile.verificationStatus;
   const to = OWNER_TARGET[action];
-  if (from === to) return fail("The application is already in that state.", 409);
-
+  // if (from === to) return fail("The application is already in that state.", 409);
+  // Re-sending "request more information" (e.g. with a corrected note) is allowed.
+  if (from === to && action !== "REQUEST_INFO") return fail("The application is already in that state.", 409);
+  
   if (action === "APPROVE") {
     if (!profile.onboardingCompletedAt) return fail("The owner hasn't submitted their registration yet.", 409);
     if (!profile.user.emailVerifiedAt || (SMS_VERIFICATION_ENABLED && !profile.phoneVerifiedAt)) {
@@ -86,7 +88,8 @@ export async function reviewProperty(adminId: string, propertyId: string, action
   if (!property) return fail("Property not found.", 404);
   const from = property.status;
   const to = PROPERTY_TARGET[action];
-  if (from === to) return fail("The property is already in that state.", 409);
+  // if (from === to) return fail("The property is already in that state.", 409);
+  if (from === to && action !== "REQUEST_INFO") return fail("The property is already in that state.", 409);
 
   const now = new Date();
   const changed = await prisma.$transaction(async (tx) => {

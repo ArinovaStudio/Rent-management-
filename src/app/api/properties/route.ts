@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageProperties } from "@/lib/permissions";
-import { parsePropertyForm, MAX_IMAGES } from "@/lib/property-form";
+import { parsePropertyForm, MAX_IMAGES, imageOrder } from "@/lib/property-form";
 import { saveFile, saveSensitiveFile, removeSensitiveFile } from "@/lib/uploads";
 import { getVerificationStatus, hasUnfinishedOnboarding } from "@/lib/owner-status";
 
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   const fd = await req.formData().catch(() => null);
   if (!fd) return NextResponse.json({ error: "Invalid form data." }, { status: 400 });
 
-  const parsed = parsePropertyForm(fd);
+  const parsed = parsePropertyForm(fd, me.role);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
   if (parsed.images.length > MAX_IMAGES) {
     return NextResponse.json({ error: `You can upload up to ${MAX_IMAGES} images.` }, { status: 400 });
@@ -90,6 +90,8 @@ export async function POST(req: Request) {
   }
 
   const imagePaths = await Promise.all(parsed.images.map((f) => saveFile(f, "images", "image")));
+  const order = imageOrder(parsed.imageOrder, [], imagePaths.length);
+  const videoPath = parsed.videoFile ? await saveFile(parsed.videoFile, "videos", "video") : null;
   const docRows = await Promise.all(
     parsed.docs.map(async (d) => ({
       name: d.name,
@@ -97,8 +99,11 @@ export async function POST(req: Request) {
     }))
   );
   await prisma.$transaction([
-    prisma.propertyImage.createMany({ data: imagePaths.map((path) => ({ propertyId: property.id, path })) }),
+    prisma.propertyImage.createMany({
+      data: imagePaths.map((path, i) => ({ propertyId: property.id, path, sortOrder: order.indexOf(`new:${i}`) })),
+    }),
     prisma.propertyDocument.createMany({ data: docRows.map((d) => ({ ...d, propertyId: property.id })) }),
+    ...(videoPath ? [prisma.property.update({ where: { id: property.id }, data: { videoPath } })] : []),
   ]);
 
   return NextResponse.json({ id: property.id, status }, { status: 201 });

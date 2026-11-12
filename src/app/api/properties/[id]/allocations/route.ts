@@ -3,8 +3,9 @@ import { randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-import { canEditProperty } from "@/lib/permissions";
+// import { canEditProperty } from "@/lib/permissions";
 import { checkFile, saveFile } from "@/lib/uploads";
+import { canOperateProperty } from "@/lib/property-access";
 
 export async function POST(
   req: Request,
@@ -22,7 +23,7 @@ export async function POST(
     where: { id: propertyId },
   });
 
-  if (!property || !canEditProperty(me, property)) {
+  if (!property || !(await canOperateProperty(me, property))) {
     return NextResponse.json(
       { error: "You can't manage this property." },
       { status: 403 }

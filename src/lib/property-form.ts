@@ -1,4 +1,6 @@
 import { checkFile } from "./uploads";
+import type { Role } from "./jwt";
+import { parseListingFields } from "./property-fields";
 
 export const MAX_SEATS = { PG: 4, OTHER: 6 };
 export const MAX_IMAGES = 10;
@@ -16,7 +18,7 @@ export type RoomInput = {
 
 // Reads the multipart form sent by the property form and validates it.
 // Used by both create (POST) and update (PUT) so the rules live in one place.
-export function parsePropertyForm(fd: FormData) {
+export function parsePropertyForm(fd: FormData, role: Role) {
   const str = (k: string) => String(fd.get(k) ?? "").trim();
   const optInt = (k: string, label: string) => {
     const v = str(k);
@@ -34,10 +36,11 @@ export function parsePropertyForm(fd: FormData) {
 
   const bedrooms = optInt("bedrooms", "Bedrooms");
   const bathrooms = optInt("bathrooms", "Bathrooms");
-  const areaSqft = optInt("areaSqft", "Area");
+  // const areaSqft = optInt("areaSqft", "Area");
   const floors = optInt("floors", "Floors");
-  for (const f of [bedrooms, bathrooms, areaSqft, floors]) if ("error" in f && f.error) return fail(f.error);
-
+  // for (const f of [bedrooms, bathrooms, areaSqft, floors]) if ("error" in f && f.error) return fail(f.error);
+  for (const f of [bedrooms, bathrooms, floors]) if ("error" in f && f.error) return fail(f.error);
+  
   // Map pin: both or neither
   const latStr = str("latitude"), lngStr = str("longitude");
   let latitude: number | null = null, longitude: number | null = null;
@@ -81,6 +84,9 @@ export function parsePropertyForm(fd: FormData) {
   if (!sharing && (rooms.length !== 1 || rooms[0].capacity !== 1)) {
     return fail("A non-sharing property has exactly one unit.");
   }
+  const listing = parseListingFields(fd, role);
+  if ("error" in listing) return fail(listing.error);
+  if (listing.videoFile) { const e = checkFile(listing.videoFile, "video"); if (e) return fail(e); }
 
   // Files
   const images = fd.getAll("images").filter((f): f is File => f instanceof File && f.size > 0);
@@ -101,15 +107,32 @@ export function parsePropertyForm(fd: FormData) {
 
   return {
     data: {
+      ...listing.data,
       name, type, address, city, sharing, latitude, longitude,
       description: str("description") || null,
       bedrooms: type === "PG" ? null : (bedrooms.value ?? null),
       bathrooms: bathrooms.value ?? null,
-      areaSqft: areaSqft.value ?? null,
+      areaSqft: typeof listing.data.builtUpAreaSqm === "number" ? Math.round(listing.data.builtUpAreaSqm * 10.7639) : null,
       floors: floors.value ?? null,
     },
     rooms, images, docs,
     removeImageIds: ids("removeImageIds"),
     removeDocIds: ids("removeDocIds"),
+    videoFile: listing.videoFile,
+    removeVideo: listing.removeVideo,
+    imageOrder: str("imageOrder"),
   };
+}
+
+// Final photo order sent by the form: existing image ids plus "new:<n>" for new uploads.
+export function imageOrder(raw: string, keptIds: string[], newCount: number): string[] {
+  const valid = [...keptIds, ...Array.from({ length: newCount }, (_, i) => `new:${i}`)];
+  let given: unknown;
+  try { given = JSON.parse(raw || "[]"); } catch { given = []; }
+  const out: string[] = [];
+  for (const t of Array.isArray(given) ? given : []) {
+    if (typeof t === "string" && valid.includes(t) && !out.includes(t)) out.push(t);
+  }
+  for (const t of valid) if (!out.includes(t)) out.push(t);
+  return out;
 }

@@ -2,7 +2,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-import { canEditProperty } from "@/lib/permissions";
+// import { canEditProperty } from "@/lib/permissions";
+import { canOperateProperty } from "@/lib/property-access";
 
 export async function PATCH(
   _req: Request,
@@ -32,7 +33,7 @@ export async function PATCH(
     );
   }
 
-  if (!canEditProperty(me, allocation.room.property)) {
+  if (!(await canOperateProperty(me, allocation.room.property))) {
     return NextResponse.json(
       { error: "You can't manage this allocation." },
       { status: 403 }
