@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageProperties } from "@/lib/permissions";
 import { getVerificationStatus } from "@/lib/owner-status";
 import PropertyForm from "../property-form";
+import { AdminShell } from "@/components/admin/AdminShell";
 import { listedByInfo } from "@/lib/property-fields";
 
 export default async function NewPropertyPage() {
@@ -32,14 +33,14 @@ export default async function NewPropertyPage() {
       })
     : null;
 
+  const name = (me as unknown as { name?: string }).name ?? "Account";
+
   return (
-    <main className="wide">
-      <h1>Add property</h1>
+    <AdminShell role={me.role} name={name}>
       {me.role === "PROPERTY_ADMIN" && (
-        <p className="muted" style={{ marginTop: 0 }}>New properties are reviewed by the Super Admin before they go live.</p>
+        <p className="mb-6 rounded-2xl bg-background px-5 py-3 text-sm text-muted-foreground">New properties are reviewed by the Super Admin before they go live.</p>
       )}
-      <PropertyForm owners={owners} role={me.role} listedBy={lister ? listedByInfo(lister) : null}/>
-      <p className="muted"><a href="/dashboard/properties">Back to properties</a></p>
-    </main>
+      <PropertyForm owners={owners} role={me.role} listedBy={lister ? listedByInfo(lister) : null} />
+    </AdminShell>
   );
 }

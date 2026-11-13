@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageProperties } from "@/lib/permissions";
 import { parsePropertyForm, MAX_IMAGES, imageOrder } from "@/lib/property-form";
-import { saveFile, saveSensitiveFile, removeSensitiveFile } from "@/lib/uploads";
+import { saveFile, removeFile, saveSensitiveFile, removeSensitiveFile } from "@/lib/uploads";
 import { getVerificationStatus, hasUnfinishedOnboarding } from "@/lib/owner-status";
 
 export async function POST(req: Request) {
@@ -40,6 +40,24 @@ export async function POST(req: Request) {
     ownerId = owner.id;
   }
 
+  const requestedCoOwner = String(fd.get("coOwnerId") ?? "").trim();
+  let coOwnerId: string | null = null;
+  if (me.role === "SUPER_ADMIN" && requestedCoOwner) {
+    if (!requestedOwner) {
+      return NextResponse.json({ error: "Choose a primary owner before assigning a co-owner." }, { status: 400 });
+    }
+    if (requestedCoOwner === ownerId) {
+      return NextResponse.json({ error: "The primary owner and co-owner must be different people." }, { status: 400 });
+    }
+    const coOwner = await prisma.user.findUnique({ where: { id: requestedCoOwner }, select: { id: true, role: true } });
+    if (!coOwner || coOwner.role !== "PROPERTY_ADMIN") {
+      return NextResponse.json({ error: "Choose a valid registered Property Admin as co-owner." }, { status: 400 });
+    }
+    coOwnerId = coOwner.id;
+  } else if (requestedCoOwner) {
+    return NextResponse.json({ error: "Only a Super Admin can assign a co-owner during property creation." }, { status: 403 });
+  }
+
   // Super Admin's own listings go live immediately; Property Admin's always wait for review,
   // even when the owner is VERIFIED (account KYC is not proof of this property's ownership).
   const status = me.role === "SUPER_ADMIN" ? "APPROVED" : "PENDING";
@@ -69,6 +87,7 @@ export async function POST(req: Request) {
         ownerId,
         status,
         rooms: { create: parsed.rooms.map(({ id: _id, ...r }) => r) },
+        ...(coOwnerId ? { coOwners: { create: { userId: coOwnerId, assignedById: me.id } } } : {}),
         ...(proof && !("error" in proof)
           ? {
               authorityProof: {
@@ -90,6 +109,15 @@ export async function POST(req: Request) {
   }
 
   const imagePaths = await Promise.all(parsed.images.map((f) => saveFile(f, "images", "image")));
+  const categoryMediaRows = await Promise.all(parsed.categoryMedia.map(async (item) => ({
+    propertyId: property.id,
+    capacity: item.capacity,
+    mediaType: item.mediaType,
+    path: await saveFile(item.file, item.mediaType === "IMAGE" ? "images/pg-categories" : "videos/pg-categories", item.mediaType === "IMAGE" ? "image" : "video"),
+    originalName: item.file.name.slice(0, 200),
+    mimeType: item.file.type,
+    sizeBytes: item.file.size,
+  })));
   const order = imageOrder(parsed.imageOrder, [], imagePaths.length);
   const videoPath = parsed.videoFile ? await saveFile(parsed.videoFile, "videos", "video") : null;
   const docRows = await Promise.all(
@@ -98,13 +126,19 @@ export async function POST(req: Request) {
       path: await saveFile(d.file, `docs/${property.id}`, "doc"),
     }))
   );
-  await prisma.$transaction([
-    prisma.propertyImage.createMany({
-      data: imagePaths.map((path, i) => ({ propertyId: property.id, path, sortOrder: order.indexOf(`new:${i}`) })),
-    }),
-    prisma.propertyDocument.createMany({ data: docRows.map((d) => ({ ...d, propertyId: property.id })) }),
-    ...(videoPath ? [prisma.property.update({ where: { id: property.id }, data: { videoPath } })] : []),
-  ]);
+  try {
+    await prisma.$transaction([
+      prisma.propertyImage.createMany({
+        data: imagePaths.map((path, i) => ({ propertyId: property.id, path, sortOrder: order.indexOf(`new:${i}`) })),
+      }),
+      prisma.propertyDocument.createMany({ data: docRows.map((d) => ({ ...d, propertyId: property.id })) }),
+      ...(categoryMediaRows.length ? [prisma.roomCategoryMedia.createMany({ data: categoryMediaRows })] : []),
+      ...(videoPath ? [prisma.property.update({ where: { id: property.id }, data: { videoPath } })] : []),
+    ]);
+  } catch (err) {
+    await Promise.all(categoryMediaRows.map((media) => removeFile(media.path)));
+    throw err;
+  }
 
   return NextResponse.json({ id: property.id, status }, { status: 201 });
 }

@@ -57,14 +57,16 @@ function run(fd: FormData, role: Role) {
     return bad("Invalid form data.");
   };
   // Rows of { a: text, b: positive number }, e.g. { type, size }
-  const rows = (k: string, name: string, max: number, a: string, b: string, bMax: number) => {
+  const rows = (k: string, name: string, max: number, a: string, b: string, bMax: number, bOptional = false) => {
     const list = json(k);
     if (list.length > max) bad(`Too many ${name} rows (max ${max}).`);
     return list.map((r) => {
       const o = r as Record<string, unknown>;
       const label = String(o[a] ?? "").trim();
+      const empty = o[b] === "" || o[b] == null;
       const n = Number(o[b]);
       if (!label || label.length > 60) bad(`Every ${name} row needs a name (up to 60 characters).`);
+      if (bOptional && empty) return { [a]: label };
       if (!(n > 0 && n <= bMax)) bad(`${label}: enter a number between 0 and ${bMax}.`);
       return { [a]: label, [b]: n };
     });
@@ -82,8 +84,8 @@ function run(fd: FormData, role: Role) {
   };
 
   // 2. Basics
-  const category = oneOf("category", "category", CATEGORIES) ?? bad("Choose a category.");
-  put("category", category);
+  // Category is no longer asked for (rental system). Keep the column filled with a default.
+  put("category", oneOf("category", "category", CATEGORIES) ?? "RESIDENTIAL");
   put("district", text("district", "District", 80));
   put("state", text("state", "State", 80));
   put("yearBuilt", num("yearBuilt", "Year built", 1800, new Date().getFullYear() + 10, true));
@@ -124,7 +126,8 @@ function run(fd: FormData, role: Role) {
 
   // 6, 7, 8, 9. Dynamic lists
   put("roomLayout", rows("roomLayout", "room", 30, "type", "size", 10_000));
-  put("bathroomLayout", rows("bathroomLayout", "bathroom", 30, "type", "size", 10_000));
+  // PG bathrooms are just "Attached"/"Common" per room category, so the size is optional there.
+  put("bathroomLayout", rows("bathroomLayout", "bathroom", 30, "type", "size", 10_000, str("type") === "PG"));
   put("amenities", tags("amenities", "amenity"));
   put("features", tags("features", "feature"));
   put("nearbyPlaces", rows("nearbyPlaces", "nearby place", 20, "name", "distanceKm", 500));

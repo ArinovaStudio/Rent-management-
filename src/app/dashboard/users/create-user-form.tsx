@@ -3,20 +3,17 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { authFetch } from "@/lib/fetch-auth";
 import { ID_TYPES, ID_TYPE_LABEL } from "@/lib/owner-validation";
+import { F, FileDrop, Section, ToggleRow } from "@/app/dashboard/properties/property-sections";
 
-const LABEL: Record<string, string> = {
-  PROPERTY_ADMIN: "Property Admin",
-  PROPERTY_MANAGER: "Property Manager",
-};
+const LABEL: Record<string, string> = { PROPERTY_ADMIN: "Property Admin", PROPERTY_MANAGER: "Property Manager" };
 const ACCEPT = "application/pdf,image/jpeg,image/png,image/webp";
 
 export default function CreateUserForm({ roles }: { roles: string[] }) {
   const router = useRouter();
-  const [role, setRole] = useState(roles[0]);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const fe = (k: string) => fieldErrors[k] && <span className="error" role="alert">{fieldErrors[k]}</span>;
+  const fe = (k: string) => fieldErrors[k] && <span role="alert" className="text-xs text-destructive sm:col-span-2">{fieldErrors[k]}</span>;
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -37,53 +34,47 @@ export default function CreateUserForm({ roles }: { roles: string[] }) {
   }
 
   return (
-    <form onSubmit={onSubmit}>
-      <label>
-        Role
-        <select name="role" value={role} onChange={(e) => setRole(e.target.value)} required>
-          {roles.map((r) => <option key={r} value={r}>{LABEL[r] ?? r}</option>)}
-        </select>
-      </label>
+    <form onSubmit={onSubmit} className="space-y-6">
+      <Section id="account" title="Account">
+        <F label="Role">
+          <select className="field" name="role" defaultValue={roles[0]} required>
+            {roles.map((r) => <option key={r} value={r}>{LABEL[r] ?? r}</option>)}
+          </select>
+        </F>
+        <F label="Full legal name"><input className="field" name="name" required />{fe("name")}</F>
+        <F label="Email"><input className="field" name="email" type="email" required />{fe("email")}</F>
+        <F label="Mobile number"><input className="field" name="phone" type="tel" required />{fe("phone")}</F>
+        <F label="Temporary password"><input className="field" name="password" type="password" minLength={8} required />{fe("password")}</F>
+      </Section>
 
-      <fieldset>
-        <legend>Account</legend>
-        <label>Full legal name<input name="name" required />{fe("name")}</label>
-        <label>Email<input name="email" type="email" required />{fe("email")}</label>
-        <label>Mobile number<input name="phone" type="tel" required />{fe("phone")}</label>
-        <label>Temporary password<input name="password" type="password" required minLength={8} />{fe("password")}</label>
-      </fieldset>
-
-      <fieldset>
-        <legend>Identity</legend>
-        <label>
-          ID type
-          <select name="idType" defaultValue="PAN" required>
+      <Section id="identity" title="Identity & address" hint="Only the last 4 characters of the ID number are stored. Documents are kept privately.">
+        <F label="ID type">
+          <select className="field" name="idType" defaultValue="PAN" required>
             {ID_TYPES.map((t) => <option key={t} value={t}>{ID_TYPE_LABEL[t]}</option>)}
           </select>
           {fe("idType")}
-        </label>
-        <label>ID number (only the last 4 characters are stored)<input name="idNumber" required />{fe("idNumber")}</label>
-        <label>ID photo or PDF<input name="document" type="file" accept={ACCEPT} required />{fe("document")}</label>
-        <label>Street address<input name="addressLine1" required />{fe("addressLine1")}</label>
-        <label>Address line 2 (optional)<input name="addressLine2" />{fe("addressLine2")}</label>
-        <label>City<input name="city" required />{fe("city")}</label>
-        <label>State<input name="state" required />{fe("state")}</label>
-        <label>PIN code<input name="postalCode" inputMode="numeric" required />{fe("postalCode")}</label>
-        <label>
-          Address proof
-          <input name="addressProof" type="file" accept={ACCEPT} required />
-          {fe("addressProof")}
-        </label>
-      </fieldset>
+        </F>
+        <F label="ID number"><input className="field" name="idNumber" required />{fe("idNumber")}</F>
+        <FileDrop name="document" accept={ACCEPT} title="Upload ID photo or PDF" hint="JPG, PNG, WebP or PDF, up to 10 MB" />
+        {fe("document")}
+        <F label="Street address" wide><input className="field" name="addressLine1" required />{fe("addressLine1")}</F>
+        <F label="Address line 2 (optional)" wide><input className="field" name="addressLine2" />{fe("addressLine2")}</F>
+        <F label="City"><input className="field" name="city" required />{fe("city")}</F>
+        <F label="State"><input className="field" name="state" required />{fe("state")}</F>
+        <F label="PIN code"><input className="field" name="postalCode" inputMode="numeric" required />{fe("postalCode")}</F>
+        <FileDrop name="addressProof" accept={ACCEPT} title="Upload address proof" hint="Utility bill, bank statement, etc." />
+        {fe("addressProof")}
+      </Section>
 
-      <label style={{ display: "block" }}>
-        <input name="consentDeclared" type="checkbox" required /> I confirm I collected these details and documents
-        with this person&apos;s consent and that they are genuine.
-      </label>
-      {fe("consentDeclared")}
+      <Section id="declaration" title="Declaration">
+        <ToggleRow title="I collected these details and documents with this person's consent and they are genuine." name="consentDeclared" required />
+        {fe("consentDeclared")}
+      </Section>
 
-      {error && <p className="error" role="alert">{error}</p>}
-      <button disabled={busy}>{busy ? "Creating…" : "Create account"}</button>
+      {error && <p role="alert" className="rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">{error}</p>}
+      <button disabled={busy} className="rounded-full bg-primary px-6 py-3 text-primary-foreground hover:bg-ink disabled:opacity-60">
+        {busy ? "Creating…" : "Create account"}
+      </button>
     </form>
   );
 }

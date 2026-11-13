@@ -28,16 +28,23 @@ export default function ReviewPanel({ url, options }: { url: string; options: Op
     router.refresh();
   }
 
+  const style = (action: string) =>
+    action === "APPROVE"
+      ? "bg-primary text-primary-foreground hover:bg-ink"
+      : action === "REJECT" || action === "RESTRICT"
+      ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
+      : "bg-cream hover:bg-cream/70";
+
   return (
-    <div>
-      {error && <p className="error" role="alert">{error}</p>}
-      <label>
-        Note (required to reject or request more information; the owner is emailed this)
-        <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
+    <div className="space-y-4">
+      {error && <p role="alert" className="rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">{error}</p>}
+      <label className="flex flex-col gap-2 text-sm">
+        <span className="font-medium">Note (required to reject or request more information; the owner is emailed this)</span>
+        <textarea className="field" rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
       </label>
-      <div className="actions">
+      <div className="flex flex-wrap gap-2">
         {options.map((o) => (
-          <button key={o.action} type="button" disabled={busy} className={o.action === "APPROVE" ? "" : "secondary"} onClick={() => submit(o)}>
+          <button key={o.action} type="button" disabled={busy} onClick={() => submit(o)} className={`rounded-full px-6 py-3 disabled:opacity-60 ${style(o.action)}`}>
             {o.label}
           </button>
         ))}

@@ -49,8 +49,9 @@ export default async function Dashboard() {
       )}
       {user.role === "SUPER_ADMIN" && (
         <>
-          <p><a href="/dashboard/admin/kyc">KYC review</a></p>
-          <p><a href="/dashboard/admin/properties">Property approvals</a></p>
+          <p><a href="/admin">Admin dashboard</a></p>
+          <p><a href="/admin/kyc">KYC review</a></p>
+          <p><a href="/admin/approvals">Property approvals</a></p>
         </>
       )}
       {user.role !== "PROPERTY_MANAGER" && (

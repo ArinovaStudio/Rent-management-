@@ -22,6 +22,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         },
       },
       images: true,
+      categoryMedia: true,
       documents: true,
       authorityProof: true,
     },
@@ -39,6 +40,25 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   // Images: existing ones minus removed ones plus new ones must stay within the limit.
   const removeImages = property.images.filter((i) => parsed.removeImageIds.includes(i.id));
   const removeDocs = property.documents.filter((d) => parsed.removeDocIds.includes(d.id));
+  const keptCategories = new Set(parsed.rooms.map((r) => r.capacity));
+  const removeCategoryMedia = property.categoryMedia.filter((m) =>
+    parsed.data.type !== "PG" || parsed.removeCategoryMediaIds.includes(m.id) || !keptCategories.has(m.capacity)
+  );
+  if (parsed.removeCategoryMediaIds.some((mediaId) => !property.categoryMedia.some((m) => m.id === mediaId))) {
+    return NextResponse.json({ error: "Unknown category media item." }, { status: 400 });
+  }
+  if (parsed.categoryMedia.some((m) => !keptCategories.has(m.capacity))) {
+    return NextResponse.json({ error: "Upload media only for categories that have rooms." }, { status: 400 });
+  }
+  for (const capacity of keptCategories) {
+    const currentImages = property.categoryMedia.filter((m) => m.capacity === capacity && m.mediaType === "IMAGE" && !removeCategoryMedia.some((r) => r.id === m.id)).length;
+    const currentVideos = property.categoryMedia.filter((m) => m.capacity === capacity && m.mediaType === "VIDEO" && !removeCategoryMedia.some((r) => r.id === m.id)).length;
+    const newImages = parsed.categoryMedia.filter((m) => m.capacity === capacity && m.mediaType === "IMAGE").length;
+    const newVideos = parsed.categoryMedia.filter((m) => m.capacity === capacity && m.mediaType === "VIDEO").length;
+    if (currentImages + newImages > 10 || currentVideos + newVideos > 5) {
+      return NextResponse.json({ error: `${capacity} seater category allows up to 10 photos and 5 videos.` }, { status: 400 });
+    }
+  }
   if (property.images.length - removeImages.length + parsed.images.length > MAX_IMAGES) {
     return NextResponse.json({ error: `A property can have up to ${MAX_IMAGES} images.` }, { status: 400 });
   }
@@ -96,6 +116,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       : null;
 
   const imagePaths = await Promise.all(parsed.images.map((f) => saveFile(f, "images", "image")));
+  const categoryMediaRows = await Promise.all(parsed.categoryMedia.map(async (item) => ({
+    propertyId: id,
+    capacity: item.capacity,
+    mediaType: item.mediaType,
+    path: await saveFile(item.file, item.mediaType === "IMAGE" ? "images/pg-categories" : "videos/pg-categories", item.mediaType === "IMAGE" ? "image" : "video"),
+    originalName: item.file.name.slice(0, 200),
+    mimeType: item.file.type,
+    sizeBytes: item.file.size,
+  })));
   const docRows = await Promise.all(
     parsed.docs.map(async (d) => ({
       name: d.name,
@@ -161,6 +190,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       prisma.room.deleteMany({ where: { id: { in: dropped.map((r) => r.id) } } }),
       prisma.propertyImage.deleteMany({ where: { id: { in: removeImages.map((i) => i.id) } } }),
       prisma.propertyDocument.deleteMany({ where: { id: { in: removeDocs.map((d) => d.id) } } }),
+      prisma.roomCategoryMedia.deleteMany({ where: { id: { in: removeCategoryMedia.map((m) => m.id) } } }),
+      ...(categoryMediaRows.length ? [prisma.roomCategoryMedia.createMany({ data: categoryMediaRows })] : []),
       ...keptImages.map((i) => prisma.propertyImage.update({ where: { id: i.id }, data: { sortOrder: order.indexOf(i.id) } })),
       prisma.propertyImage.createMany({
         data: imagePaths.map((path, i) => ({ propertyId: id, path, sortOrder: order.indexOf(`new:${i}`) })),
@@ -170,11 +201,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   } catch (err) {
     if (proofData) await removeSensitiveFile(proofData.path);
     if (typeof videoPath === "string") await removeFile(videoPath);
+    await Promise.all(categoryMediaRows.map((media) => removeFile(media.path)));
     throw err;
   }
 
   // Delete the old files only after the database change went through.
-  await Promise.all([...removeImages, ...removeDocs].map((f) => removeFile(f.path)));
+  await Promise.all([...removeImages, ...removeDocs, ...removeCategoryMedia].map((f) => removeFile(f.path)));
   if (proofData && property.authorityProof) await removeSensitiveFile(property.authorityProof.path);
   if (videoPath !== undefined && property.videoPath) await removeFile(property.videoPath);
   

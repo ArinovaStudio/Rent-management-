@@ -62,6 +62,11 @@ enum PropertyRelationship {
   AUTHORIZED_MANAGER
 }
 
+enum RoomMediaType {
+  IMAGE
+  VIDEO
+}
+
 enum SensitiveDocumentType {
   ID_DOCUMENT
   ADDRESS_PROOF
@@ -99,6 +104,8 @@ model User {
   refreshTokens RefreshToken[]
   emailOtps     EmailOtp[]
   properties    Property[]     @relation("OwnedProperties")
+  coOwnedProperties PropertyCoOwner[] @relation("PropertyCoOwnerUser")
+  assignedPropertyCoOwners PropertyCoOwner[] @relation("PropertyCoOwnerAssigner")
   managedProperties PropertyManager[] @relation("ManagedProperties")
   reportedIssues    Issue[]           @relation("ReportedIssues")
   // Null for accounts created before owner onboarding existed, for Super Admins and for managers.
@@ -208,6 +215,7 @@ model Property {
   bathrooms   Int?
   areaSqft    Int?
   floors      Int?
+  roomsPerFloor Int?
   sharing     Boolean            @default(false)
   status      ReviewStatus       @default(PENDING)
   reviewNote  String?
@@ -217,9 +225,11 @@ model Property {
   owner       User               @relation("OwnedProperties", fields: [ownerId], references: [id], onDelete: Cascade)
   rooms       Room[]
   images      PropertyImage[]
+  categoryMedia RoomCategoryMedia[]
   documents   PropertyDocument[]
   // Proof of ownership/authority. Kept apart from the owner's personal KYC documents.
   authorityProof PropertyAuthorityProof?
+  coOwners PropertyCoOwner[]
   // --- Listing details ---
   category            String?
   district            String?
@@ -282,6 +292,23 @@ model PropertyImage {
   sortOrder  Int      @default(0)
 
   @@index([propertyId])
+}
+
+
+model RoomCategoryMedia {
+  id         String        @id @default(cuid())
+  propertyId String
+  property   Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  capacity   Int
+  mediaType  RoomMediaType
+  path       String
+  originalName String
+  mimeType   String
+  sizeBytes  Int
+  sortOrder  Int           @default(0)
+  createdAt  DateTime      @default(now())
+
+  @@index([propertyId, capacity, mediaType])
 }
 
 model PropertyDocument {
@@ -388,6 +415,39 @@ model AuditEvent {
   @@index([actorId])
 }
 
+
+
+// A co-owner is linked to a property independently of its primary owner.
+model PropertyCoOwner {
+  id           String   @id @default(cuid())
+  propertyId   String
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation("PropertyCoOwnerUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedById String
+  assignedBy   User     @relation("PropertyCoOwnerAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now())
+  documents    PropertyCoOwnerDocument[]
+
+  @@unique([propertyId, userId])
+  @@index([userId])
+}
+
+// Co-owner proof is private and independently associated with the assigned co-owner.
+model PropertyCoOwnerDocument {
+  id                  String          @id @default(cuid())
+  propertyCoOwnerId   String
+  propertyCoOwner     PropertyCoOwner @relation(fields: [propertyCoOwnerId], references: [id], onDelete: Cascade)
+  name                String
+  path                String
+  originalName        String
+  mimeType            String
+  sizeBytes           Int
+  sha256              String
+  uploadedAt          DateTime        @default(now())
+
+  @@index([propertyCoOwnerId, uploadedAt])
+}
 
 // One row per (property, manager). A manager can have many rows, a property can have many managers.
 model PropertyManager {

@@ -2,10 +2,12 @@ import { checkFile } from "./uploads";
 import type { Role } from "./jwt";
 import { parseListingFields } from "./property-fields";
 
-export const MAX_SEATS = { PG: 4, OTHER: 6 };
+export const MAX_SEATS = { PG: 5, OTHER: 6 };
 export const MAX_IMAGES = 10;
 const TYPES = ["PG", "APARTMENT", "FLAT"] as const;
 export type PType = (typeof TYPES)[number];
+
+export type RoomCategoryMediaInput = { capacity: number; mediaType: "IMAGE" | "VIDEO"; file: File };
 
 export type RoomInput = {
   id?: string;
@@ -38,8 +40,9 @@ export function parsePropertyForm(fd: FormData, role: Role) {
   const bathrooms = optInt("bathrooms", "Bathrooms");
   // const areaSqft = optInt("areaSqft", "Area");
   const floors = optInt("floors", "Floors");
+  const roomsPerFloor = optInt("roomsPerFloor", "Rooms per floor");
   // for (const f of [bedrooms, bathrooms, areaSqft, floors]) if ("error" in f && f.error) return fail(f.error);
-  for (const f of [bedrooms, bathrooms, floors]) if ("error" in f && f.error) return fail(f.error);
+  for (const f of [bedrooms, bathrooms, floors, roomsPerFloor]) if ("error" in f && f.error) return fail(f.error);
   
   // Map pin: both or neither
   const latStr = str("latitude"), lngStr = str("longitude");
@@ -88,6 +91,31 @@ export function parsePropertyForm(fd: FormData, role: Role) {
   if ("error" in listing) return fail(listing.error);
   if (listing.videoFile) { const e = checkFile(listing.videoFile, "video"); if (e) return fail(e); }
 
+  // PG category media is attached to a seater category, not to each room.
+  const categoryMedia: RoomCategoryMediaInput[] = [];
+  const categoryCounts: Record<number, { images: number; videos: number }> = {};
+  for (const [key, value] of fd.entries()) {
+    const match = /^categoryMedia_(\d+)_(images|videos)$/.exec(key);
+    if (!match || !(value instanceof File) || value.size === 0) continue;
+    const capacity = Number(match[1]);
+    if (type !== "PG" || !Number.isInteger(capacity) || capacity < 1 || capacity > MAX_SEATS.PG) {
+      return fail("Invalid PG room category media selection.");
+    }
+    const mediaType = match[2] === "images" ? "IMAGE" : "VIDEO";
+    const error = checkFile(value, mediaType === "IMAGE" ? "image" : "video");
+    if (error) return fail(error);
+    const counts = categoryCounts[capacity] ?? { images: 0, videos: 0 };
+    if (mediaType === "IMAGE") counts.images += 1;
+    else counts.videos += 1;
+    categoryCounts[capacity] = counts;
+    if (counts.images > 10) return fail(`${capacity} seater category can have up to 10 photos.`);
+    if (counts.videos > 5) return fail(`${capacity} seater category can have up to 5 videos.`);
+    categoryMedia.push({ capacity, mediaType, file: value });
+  }
+  if (categoryMedia.some((media) => !rooms.some((room) => room.capacity === media.capacity))) {
+    return fail("Upload room media only for categories that contain rooms.");
+  }
+
   // Files
   const images = fd.getAll("images").filter((f): f is File => f instanceof File && f.size > 0);
   const docFiles = fd.getAll("docFile");
@@ -114,8 +142,10 @@ export function parsePropertyForm(fd: FormData, role: Role) {
       bathrooms: bathrooms.value ?? null,
       areaSqft: typeof listing.data.builtUpAreaSqm === "number" ? Math.round(listing.data.builtUpAreaSqm * 10.7639) : null,
       floors: floors.value ?? null,
+      roomsPerFloor: type === "PG" ? (roomsPerFloor.value ?? null) : null,
     },
-    rooms, images, docs,
+    rooms, images, docs, categoryMedia,
+    removeCategoryMediaIds: ids("removeCategoryMediaIds"),
     removeImageIds: ids("removeImageIds"),
     removeDocIds: ids("removeDocIds"),
     videoFile: listing.videoFile,
