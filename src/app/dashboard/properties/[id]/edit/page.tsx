@@ -53,7 +53,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
     floors: property.floors,
     roomsPerFloor: property.roomsPerFloor,
     sharing: property.sharing,
-    rooms: property.rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.allocations.length, })),
+    rooms: property.rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.allocations.length, floor: r.floor })),
     images: property.images.map((i) => ({ id: i.id, path: i.path })),
     categoryMedia: property.categoryMedia.map((m) => ({ id: m.id, capacity: m.capacity, mediaType: m.mediaType, path: m.path, originalName: m.originalName })),
     documents: property.documents.map((d) => ({ id: d.id, name: d.name, path: d.path })),

@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/current-user";
 // import { canEditProperty } from "@/lib/permissions";
 import { checkFile, saveFile } from "@/lib/uploads";
 import { canOperateProperty } from "@/lib/property-access";
+import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
 
 export async function POST(
   req: Request,
@@ -124,6 +125,8 @@ export async function POST(
             moveInDate,
             monthlyRent,
             securityDeposit,
+            roomCategory: roomCategoryLabel(property, room),
+            floorNumber: roomFloor(property, room),
             accessToken,
           },
           select: {

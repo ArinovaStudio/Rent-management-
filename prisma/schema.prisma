@@ -276,6 +276,7 @@ model Room {
   occupied   Int      @default(0)
   ac         Boolean  @default(false)
   rent       Int
+  floor      Int?
   createdAt  DateTime @default(now())
   allocations Allocation[]
   issues Issue[]
@@ -337,7 +338,11 @@ model Allocation {
   status          AllocationStatus @default(ACTIVE)
   accessToken     String           @unique
 
+  roomCategory    String?
+  floorNumber     Int?
+
   documents       ResidentDocument[]
+  bills           ResidentBill[]
 
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
@@ -482,4 +487,28 @@ model Issue {
 
   @@index([propertyId, status])
   @@index([reportedById])
+}
+
+enum BillType {
+  ELECTRICITY
+  WATER
+}
+
+// One bill per resident, per type, per month. Saving the same month again updates it.
+model ResidentBill {
+  id           String     @id @default(cuid())
+  allocationId String
+  allocation   Allocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+  type         BillType
+  period       String // "2026-11"
+  amount       Int // rupees
+  note         String?
+  paid         Boolean    @default(false)
+  paidAt       DateTime?
+  createdById  String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([allocationId, type, period])
+  @@index([allocationId])
 }

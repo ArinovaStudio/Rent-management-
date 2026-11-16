@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { F, Section } from "@/app/dashboard/properties/property-sections";
 
-type RoomOption = { id: string; label: string; capacity: number; rent: number; occupied: number };
+type RoomOption = { id: string; label: string; capacity: number; rent: number; occupied: number; category: string; floor: number | null };
 
 export default function AllocationForm({ propertyId, rooms }: { propertyId: string; rooms: RoomOption[] }) {
   const router = useRouter();
@@ -54,7 +54,7 @@ export default function AllocationForm({ propertyId, rooms }: { propertyId: stri
           >
             {availableRooms.map((r) => (
               <option key={r.id} value={r.id}>
-                {r.label} · {r.occupied}/{r.capacity} occupied · ₹{r.rent.toLocaleString("en-IN")}/month
+                {r.label} · {r.category}{r.floor != null ? ` · Floor ${r.floor}` : ""} · {r.occupied}/{r.capacity} occupied · ₹{r.rent.toLocaleString("en-IN")}/month
               </option>
             ))}
           </select>

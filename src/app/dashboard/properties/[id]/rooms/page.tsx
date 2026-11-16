@@ -8,6 +8,8 @@ import { propertiesBase } from "@/lib/routes";
 import { AdminShell, Panel } from "@/components/admin/AdminShell";
 import AllocationForm from "./allocation-form";
 import AllocationActions from "./allocation-actions";
+import ResidentBills from "./resident-bills";
+import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
 
 export default async function PropertyRoomsPage({ params }: { params: Promise<{ id: string }> }) {
   const me = await getCurrentUser();
@@ -22,7 +24,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
         include: {
           allocations: {
             where: { status: "ACTIVE" },
-            include: { documents: true },
+            include: { documents: true, bills: { orderBy: { period: "desc" } } },
             orderBy: { createdAt: "desc" },
           },
         },
@@ -65,6 +67,9 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                   <p className="text-sm text-muted-foreground">
                     {room.ac ? "AC · " : ""}₹{room.rent.toLocaleString("en-IN")} / person / month
                   </p>
+                  <p className="text-sm text-muted-foreground">
+                    {roomCategoryLabel(property, room)}{roomFloor(property, room) != null ? ` · Floor ${roomFloor(property, room)}` : ""}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-medium">{count}/{room.capacity}</p>
@@ -87,6 +92,14 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                           Move-in: {resident.moveInDate.toLocaleDateString("en-IN")} · {resident.documents.length} document(s)
                         </p>
                         <a className="text-primary underline" href={`/resident/${resident.accessToken}`} target="_blank" rel="noreferrer">Open resident link</a>
+                        <p className="mt-1 text-muted-foreground">
+                          {resident.roomCategory ?? roomCategoryLabel(property, room)}
+                          {(resident.floorNumber ?? roomFloor(property, room)) != null ? ` · Floor ${resident.floorNumber ?? roomFloor(property, room)}` : ""}
+                        </p>
+                        <ResidentBills
+                          allocationId={resident.id}
+                          bills={resident.bills.map((b) => ({ id: b.id, type: b.type, period: b.period, amount: b.amount, note: b.note, paid: b.paid }))}
+                        />
                       </div>
                       <AllocationActions allocationId={resident.id} residentUrl={`/resident/${resident.accessToken}`} />
                     </div>
@@ -104,7 +117,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
         ) : (
           <AllocationForm
             propertyId={property.id}
-            rooms={property.rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, rent: r.rent, occupied: r.allocations.length }))}
+            rooms={property.rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, rent: r.rent, occupied: r.allocations.length, category: roomCategoryLabel(property, r), floor: roomFloor(property, r) }))}
           />
         )}
       </div>

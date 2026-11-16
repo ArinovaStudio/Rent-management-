@@ -16,6 +16,7 @@ export type RoomInput = {
   ac: boolean;
   rent: number;
   occupied: number;
+  floor: number | null;
 };
 
 // Reads the multipart form sent by the property form and validates it.
@@ -56,12 +57,13 @@ export function parsePropertyForm(fd: FormData, role: Role) {
   }
 
   const sharing = type === "PG" ? true : fd.get("sharing") === "on";
-
+  if (type === "PG" && !(floors.value && floors.value >= 1)) return fail("Enter the number of floors.");
   // Rooms
   let rawRooms: unknown;
   try { rawRooms = JSON.parse(str("rooms") || "[]"); } catch { rawRooms = null; }
   if (!Array.isArray(rawRooms) || rawRooms.length === 0) return fail("Add at least one room.");
-  if (rawRooms.length > 100) return fail("Too many rooms.");
+  const roomCap = type === "PG" ? (floors.value && roomsPerFloor.value ? floors.value * roomsPerFloor.value : Infinity) : 100;
+  if (rawRooms.length > roomCap) return fail(`Too many rooms (maximum ${roomCap}).`);
 
   const maxSeats = type === "PG" ? MAX_SEATS.PG : MAX_SEATS.OTHER;
   const rooms: RoomInput[] = [];
@@ -73,14 +75,19 @@ export function parsePropertyForm(fd: FormData, role: Role) {
       ac: type === "PG" && r.ac === true,
       rent: Number(r.rent),
       occupied: Number(r.occupied ?? 0),
+      floor: type === "PG" && r.floor !== "" && r.floor != null ? Number(r.floor) : null,
     };
     if (!room.label) return fail("Every room needs a name.");
+    if (type === "PG" && room.floor === null) return fail(`${room.label}: choose a floor.`);
     if (!Number.isInteger(room.capacity) || room.capacity < 1 || room.capacity > maxSeats) {
       return fail(`${room.label}: seats must be between 1 and ${maxSeats}.`);
     }
     if (!Number.isInteger(room.rent) || room.rent < 0) return fail(`${room.label}: enter a valid rent.`);
     if (!Number.isInteger(room.occupied) || room.occupied < 0 || room.occupied > room.capacity) {
       return fail(`${room.label}: occupancy must be between 0 and ${room.capacity}.`);
+    }
+    if (room.floor !== null && (!Number.isInteger(room.floor) || room.floor < 1 || room.floor > (floors.value ?? 100))) {
+      return fail(`${room.label}: choose a floor between 1 and ${floors.value ?? 100}.`);
     }
     rooms.push(room);
   }

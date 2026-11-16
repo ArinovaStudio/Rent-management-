@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+// import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Bath as BathIcon, BedDouble, ChevronLeft, ChevronRight, FileText, ImagePlus, MapPin, Maximize, Plus, Star, X } from "lucide-react";
@@ -17,7 +18,7 @@ import { propertiesBase } from "@/lib/routes";
 type GalleryItem = { key: string; src: string; id?: string; file?: File };
 type PType = "PG" | "APARTMENT" | "FLAT";
 type Bath = "Attached" | "Common";
-type RoomState = { id?: string; label: string; capacity: string; ac: boolean; rent: string; occupied: string };
+type RoomState = { id?: string; label: string; capacity: string; ac: boolean; rent: string; occupied: string; floor: string };
 type CategoryMedia = { id?: string; capacity: number; mediaType: "IMAGE" | "VIDEO"; path?: string; originalName: string; src: string; file?: File };
 
 export type InitialProperty = {
@@ -35,7 +36,7 @@ export type InitialProperty = {
   floors: number | null;
   roomsPerFloor?: number | null;
   sharing: boolean;
-  rooms: { id: string; label: string; capacity: number; ac: boolean; rent: number; occupied: number }[];
+  rooms: { id: string; label: string; capacity: number; ac: boolean; rent: number; occupied: number; floor: number | null }[];
   images: { id: string; path: string }[];
   categoryMedia?: { id: string; capacity: number; mediaType: "IMAGE" | "VIDEO"; path: string; originalName: string }[];
   documents: { id: string; name: string; path: string }[];
@@ -51,7 +52,7 @@ const TYPE_OPTIONS: [PType, string, string][] = [
   ["FLAT", "Flat", "A flat or independent floor"],
 ];
 const sm = "field !bg-background";
-const blankRoom = (label: string): RoomState => ({ label, capacity: "2", ac: false, rent: "", occupied: "0" });
+const blankRoom = (label: string): RoomState => ({ label, capacity: "2", ac: false, rent: "", occupied: "0", floor: "" });
 
 // PG bathrooms are saved as "<n> seater – Attached|Common" rows (no size)
 const bathLabel = (n: number, b: Bath) => `${n} seater – ${b}`;
@@ -80,25 +81,14 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const [rooms, setRooms] = useState<RoomState[]>(
     (initial?.rooms ?? []).map((r) => ({
       id: r.id, label: r.label, capacity: String(r.capacity), ac: r.ac,
-      rent: String(r.rent), occupied: String(r.occupied),
+      rent: String(r.rent), occupied: String(r.occupied), floor: r.floor == null ? "" : String(r.floor),
     }))
   );
   // PG room categories: the seater types this property offers. Nothing is selected by default.
-  const [cats, setCats] = useState<number[]>(() =>
-    Array.from(new Set((initial?.rooms ?? []).map((r) => r.capacity))).sort((a, b) => a - b)
-  );
   const [catWarn, setCatWarn] = useState("");
-  const [categoryCounts, setCategoryCounts] = useState<Record<number, string>>(() => {
-    const counts: Record<number, string> = {};
-    for (const room of initial?.rooms ?? []) counts[room.capacity] = String((Number(counts[room.capacity]) || 0) + 1);
-    return counts;
-  });
   const [categoryMedia, setCategoryMedia] = useState<CategoryMedia[]>(() =>
     (initial?.categoryMedia ?? []).map((m) => ({ ...m, src: `/api/uploads/${m.path}` }))
   );
-  const [roomManagerOpen, setRoomManagerOpen] = useState(false);
-  const [activeRoomCategory, setActiveRoomCategory] = useState<number>(initial?.rooms[0]?.capacity ?? 1);
-  const [roomPage, setRoomPage] = useState(0);
   const [lat, setLat] = useState(initial?.latitude != null ? String(initial.latitude) : "");
   const [lng, setLng] = useState(initial?.longitude != null ? String(initial.longitude) : "");
   const [address, setAddress] = useState(initial?.address ?? "");
@@ -138,6 +128,9 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const maxRent = rents.length ? Math.max(...rents) : 0;
   const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
   const ownerName = owners?.find((o) => o.id === ownerId)?.name;
+  const [floorsN, setFloorsN] = useState(initial?.floors != null ? String(initial.floors) : "");
+  const [floorsGenerated, setFloorsGenerated] = useState((initial?.rooms.length ?? 0) > 0);
+  const [floorInputs, setFloorInputs] = useState<Record<number, string>>({});
 
   const addPhotos = (files: FileList | null) => {
     // Copy the files out before the input is cleared: clearing it empties the live FileList,
@@ -177,36 +170,67 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const roomsUsing = (n: number) => rooms.filter((r) => Number(r.capacity) === n).length;
 
 
-  const requestedRoomTotal = Object.values(categoryCounts).reduce((sum, value) => sum + (Number(value) || 0), 0);
-  const generateRooms = () => {
-    if (Object.values(categoryCounts).some((value) => !Number.isInteger(Number(value || 0)) || Number(value || 0) < 0)) { setCatWarn("Room quantities must be whole numbers greater than or equal to zero."); return; }
-    if (requestedRoomTotal > 100) { setCatWarn("A property can have up to 100 rooms."); return; }
-    if (requestedRoomTotal < 1) { setCatWarn("Enter at least one room across the categories."); return; }
-    const next: RoomState[] = [];
-    for (let capacity = 1; capacity <= maxSeats; capacity += 1) {
-      const count = Number(categoryCounts[capacity]) || 0;
-      const existing = rooms.filter((room) => Number(room.capacity) === capacity);
-      if (count < existing.length && existing.slice(count).some((room) => Number(room.occupied) > 0)) {
-        setCatWarn(`Some ${capacity} seater rooms have active residents. Reallocate them before reducing this category quantity.`);
-        return;
-      }
-      for (let i = 0; i < count; i += 1) {
-        next.push(existing[i] ?? {
-          ...blankRoom(`${capacity} Seater - Room ${i + 1}`),
-          capacity: String(capacity),
-          rent: existing[existing.length - 1]?.rent ?? "",
-        });
-      }
-    }
-    setRooms(next);
-    const selected = Array.from({ length: maxSeats }, (_, i) => i + 1).filter((n) => Number(categoryCounts[n]) > 0);
-    setCats(selected);
-    setCategoryMedia((items) => items.filter((item) => selected.includes(item.capacity)));
-    setActiveRoomCategory(selected[0] ?? 1);
-    setRoomPage(0);
+  const cats = Array.from(new Set(rooms.map((r) => Number(r.capacity)))).sort((a, b) => a - b);
+  const floorCount = isPG ? Math.max(0, Math.floor(Number(floorsN)) || 0) : 0;
+  const floorList = Array.from({ length: floorCount }, (_, i) => i + 1);
+  const roomsOn = (f: number) => rooms.map((room, index) => ({ room, index })).filter(({ room }) => Number(room.floor) === f);
+  const strayRooms = rooms.map((room, index) => ({ room, index })).filter(({ room }) => !floorList.includes(Number(room.floor)));
+
+  const generateFloors = () => {
+    if (floorCount < 1) { setCatWarn("Enter the number of floors in Specifications first."); return; }
     setCatWarn("");
-    setRoomManagerOpen(true);
+    setFloorsGenerated(true);
   };
+
+  const generateFloorRooms = (f: number) => {
+    const raw = floorInputs[f] ?? "";
+    const want = Number(raw);
+    if (raw === "" || !Number.isInteger(want) || want < 0) { setCatWarn(`Floor ${f}: enter a whole number of rooms.`); return; }
+    const here = roomsOn(f).map(({ room }) => room);
+    if (want < here.length && here.slice(want).some((r) => Number(r.occupied) > 0)) {
+      setCatWarn(`Floor ${f} has rooms with active residents. Reallocate them before reducing the room count.`);
+      return;
+    }
+    const added = Array.from({ length: Math.max(0, want - here.length) }, (_, i) => ({
+      ...blankRoom(`Floor ${f} - Room ${here.length + i + 1}`),
+      floor: String(f),
+      rent: here[here.length - 1]?.rent ?? rooms[rooms.length - 1]?.rent ?? "",
+    }));
+    setRooms((rs) =>
+      [...rs.filter((r) => Number(r.floor) !== f), ...here.slice(0, want), ...added].sort((a, b) => Number(a.floor) - Number(b.floor))
+    );
+    setCatWarn("");
+  };
+
+  const pgRoomCard = ({ room, index }: { room: RoomState; index: number }, showFloor = false) => (
+    <div key={room.id ?? index} className="rounded-2xl bg-cream/60 p-4">
+      <div className={`grid gap-3 sm:items-end ${showFloor ? "sm:grid-cols-[1.3fr_1fr_1fr_1fr_auto]" : "sm:grid-cols-[1.3fr_1fr_1fr_auto]"}`}>
+        <F label="Room name"><input className={sm} value={room.label} onChange={(e) => updateRoom(index, { label: e.target.value })} required /></F>
+        <F label="Category">
+          <select className={sm} value={room.capacity} onChange={(e) => {
+            if (Number(e.target.value) < Number(room.occupied)) { setCatWarn(`${room.label} has ${room.occupied} residents; reallocate them before reducing its capacity.`); return; }
+            setCatWarn(""); updateRoom(index, { capacity: e.target.value });
+          }}>
+            {Array.from({ length: maxSeats }, (_, n) => n + 1).map((n) => <option key={n} value={n}>{n}-seater</option>)}
+          </select>
+        </F>
+        <F label="Rent per person / month (₹)"><input className={sm} type="number" min={0} value={room.rent} onChange={(e) => updateRoom(index, { rent: e.target.value })} required /></F>
+        {showFloor && (
+          <F label="Floor">
+            <select className={sm} value={room.floor} onChange={(e) => updateRoom(index, { floor: e.target.value })}>
+              <option value="">Choose floor</option>
+              {floorList.map((f) => <option key={f} value={f}>Floor {f}</option>)}
+            </select>
+          </F>
+        )}
+        <label className="flex items-center gap-2 pb-3 text-sm"><input type="checkbox" className="h-4 w-4 accent-primary" checked={room.ac} onChange={(e) => updateRoom(index, { ac: e.target.checked })} />AC</label>
+      </div>
+      <div className="mt-2 flex items-center justify-between text-sm">
+        <span className="text-muted-foreground">Occupied {room.occupied}/{room.capacity}</span>
+        <button type="button" disabled={Number(room.occupied) > 0} onClick={() => setRooms((rs) => rs.filter((_, i) => i !== index))} className="text-destructive disabled:opacity-40">Remove room</button>
+      </div>
+    </div>
+  );
 
   const addCategoryMedia = (capacity: number, mediaType: "IMAGE" | "VIDEO", files: FileList | null) => {
     const picked = Array.from(files ?? []);
@@ -238,12 +262,14 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     const hasProofFile = proofFile instanceof File && proofFile.size > 0;
     if (!editing && !owners && !hasProofFile) return stop("Upload proof that you own or are authorised to let this property.");
     if (multiRoom && rooms.length === 0) return stop("Add at least one room.");
-    if (isPG && Array.from({ length: maxSeats }, (_, i) => i + 1).some((capacity) => Number(categoryCounts[capacity] || 0) !== roomsUsing(capacity))) {
-      return stop("Click “Generate / update rooms” after changing category quantities.");
+    if (isPG) {
+      if (floorCount < 1) return stop("Enter the number of floors in Specifications.");
+      if (rooms.some((r) => !floorList.includes(Number(r.floor)))) return stop(`Every room must belong to a floor between 1 and ${floorCount}.`);
     }
+    const liveMedia = categoryMedia.filter((m) => cats.includes(m.capacity));
 
     const payload = multiRoom
-      ? rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.occupied }))
+      ? rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.occupied, floor: r.floor }))
       // A single unit's rent is the Rent field (falls back to what was saved before)
       : [{ id: single?.id, label: "Entire property", capacity: 1, ac: false, rent: Number(price) > 0 ? price : String(single?.rent ?? 0), occupied: singleOcc }];
     fd.set("rooms", JSON.stringify(payload));
@@ -261,10 +287,10 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
       fd.delete(`categoryMedia_${capacity}_images`);
       fd.delete(`categoryMedia_${capacity}_videos`);
     }
-    if (isPG) categoryMedia.forEach((media) => {
+    if (isPG) liveMedia.forEach((media) => {
       if (media.file) fd.append(`categoryMedia_${media.capacity}_${media.mediaType === "IMAGE" ? "images" : "videos"}`, media.file);
     });
-    fd.set("removeCategoryMediaIds", JSON.stringify((initial?.categoryMedia ?? []).filter((m) => !categoryMedia.some((current) => current.id === m.id)).map((m) => m.id)));
+    fd.set("removeCategoryMediaIds", JSON.stringify((initial?.categoryMedia ?? []).filter((m) => !liveMedia.some((current) => current.id === m.id)).map((m) => m.id)));
     const asRows = (rows: Pair[], a: string, b: string) => JSON.stringify(rows.filter((r) => r.a.trim() || r.b).map((r) => ({ [a]: r.a, [b]: r.b })));
     if (isPG) {
       fd.set("roomLayout", "[]");
@@ -402,9 +428,8 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
           <Section id="specifications" title="Specifications">
             {!isPG && <F label="Bedrooms"><input className="field" name="bedrooms" type="number" min={0} value={beds} onChange={(e) => setBeds(e.target.value)} placeholder="Number of bedrooms" /></F>}
             <F label="Bathrooms"><input className="field" name="bathrooms" type="number" min={0} value={baths} onChange={(e) => setBaths(e.target.value)} placeholder="Number of bathrooms" /></F>
-            <F label={isPG ? "Floors" : "Floors / level"}><input className="field" name="floors" type="number" min={0} defaultValue={initial?.floors ?? ""} /></F>
-            {isPG && <F label="Rooms per floor"><input className="field" name="roomsPerFloor" type="number" min={0} defaultValue={initial?.roomsPerFloor ?? ""} /></F>}
-            {!isPG && <F label="Parking spaces"><input className="field" name="parkingSpaces" type="number" min={0} max={100} defaultValue={L?.parkingSpaces ?? ""} /></F>}
+            {/* <F label={isPG ? "Floors" : "Floors / level"}><input className="field" name="floors" type="number" min={0} value={floorsN} onChange={(e) => setFloorsN(e.target.value)} /></F> */}
+            <F label={isPG ? "Number of floors" : "Floors / level"}><input className="field" name="floors" type="number" min={0} value={floorsN} onChange={(e) => setFloorsN(e.target.value)} /></F>            {!isPG && <F label="Parking spaces"><input className="field" name="parkingSpaces" type="number" min={0} max={100} defaultValue={L?.parkingSpaces ?? ""} /></F>}
             {!isPG && (
               <F label="Furnishing">
                 <select className="field" name="furnishing" defaultValue={L?.furnishing ?? ""}>
@@ -423,25 +448,36 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             {!isPG && <F label="Handover date"><input className="field" name="handoverDate" type="date" defaultValue={L?.handoverDate ?? ""} /></F>}
           </Section>
 
-          <Section id="rooms" title="Rooms" hint={multiRoom ? (isPG ? "Set the number of rooms per seater category, then manage their details in the room window." : "Add one entry per bedroom.") : "This property is rented as a single unit, using the Rent above."}>
+          <Section id="rooms" title="Rooms" hint={multiRoom ? (isPG ? "Set the floors, then add rooms and their seater category floor by floor." : "Add one entry per bedroom.") : "This property is rented as a single unit, using the Rent above."}>
             {isPG ? (
               <>
-                <div className="sm:col-span-2 rounded-2xl bg-cream/60 p-4">
-                  <p className="font-medium">Rooms per category</p>
-                  <p className="mb-3 text-sm text-muted-foreground">Enter the number of rooms for each category (maximum 100 rooms total).</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {Array.from({ length: maxSeats }, (_, i) => i + 1).map((capacity) => (
-                      <F key={capacity} label={`${capacity} seater rooms`}>
-                        <input className="field" type="number" min={0} max={100} value={categoryCounts[capacity] ?? "0"} onChange={(e) => setCategoryCounts((v) => ({ ...v, [capacity]: e.target.value }))} />
-                      </F>
-                    ))}
+                <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-cream/60 p-4">
+                  <div>
+                    <p className="font-medium">Floors</p>
+                    <p className="text-sm text-muted-foreground">{floorCount > 0 ? `${floorCount} floors declared in Specifications.` : "Enter the number of floors in Specifications first."}</p>
                   </div>
-                  <div className="mt-4 flex items-center justify-between gap-3">
-                    <p className="text-sm text-muted-foreground">Total: <strong className="text-foreground">{requestedRoomTotal}/100</strong></p>
-                    <button type="button" onClick={generateRooms} className="rounded-full bg-primary px-5 py-2.5 text-sm text-primary-foreground">Generate / update rooms</button>
-                  </div>
+                  <button type="button" onClick={generateFloors} disabled={floorCount < 1} className="rounded-full bg-primary px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-40">{floorsGenerated ? "Floors generated" : "Generate floors"}</button>
                 </div>
                 {catWarn && <p role="alert" className="rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive sm:col-span-2">{catWarn}</p>}
+                {floorsGenerated && floorList.map((f) => (
+                  <div key={f} className="sm:col-span-2 rounded-2xl border border-cream p-4">
+                    <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                      <div><p className="font-medium">Floor {f}</p><p className="text-xs text-muted-foreground">{roomsOn(f).length} rooms</p></div>
+                      <div className="flex items-end gap-2">
+                        <F label="Number of rooms"><input className={`${sm} !w-28`} type="number" min={0} value={floorInputs[f] ?? String(roomsOn(f).length)} onChange={(e) => setFloorInputs((v) => ({ ...v, [f]: e.target.value }))} /></F>
+                        <button type="button" onClick={() => generateFloorRooms(f)} className="rounded-full bg-primary px-5 py-2.5 text-sm text-primary-foreground">Generate rooms</button>
+                      </div>
+                    </div>
+                    <div className="space-y-3">{roomsOn(f).map((item) => pgRoomCard(item))}</div>
+                  </div>
+                ))}
+                {strayRooms.length > 0 && (
+                  <div className="sm:col-span-2 rounded-2xl border border-destructive/40 p-4">
+                    <p className="font-medium text-destructive">Rooms without a valid floor ({strayRooms.length})</p>
+                    <p className="mb-3 text-xs text-muted-foreground">Assign each to a floor (1–{floorCount || "?"}) before saving.</p>
+                    <div className="space-y-3">{strayRooms.map((item) => pgRoomCard(item, true))}</div>
+                  </div>
+                )}
                 {cats.map((capacity) => (
                   <div key={capacity} className="sm:col-span-2 rounded-2xl border border-cream p-4">
                     <div className="mb-3 flex items-center justify-between"><div><p className="font-medium">{capacity} seater room media</p><p className="text-xs text-muted-foreground">Shared by all {roomsUsing(capacity)} rooms in this category</p></div><span className="text-xs text-muted-foreground">{categoryMedia.filter((m) => m.capacity === capacity).length} files</span></div>
@@ -459,19 +495,18 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
                     <p className="mt-2 text-xs text-muted-foreground">Maximum 10 photos (5 MB each) and 5 videos (50 MB each).</p>
                   </div>
                 ))}
-                <div className="sm:col-span-2 flex items-center justify-between rounded-2xl bg-cream p-4"><div><p className="font-medium">{rooms.length} rooms generated</p><p className="text-sm text-muted-foreground">Room details open separately and are paginated.</p></div><button type="button" disabled={!rooms.length} onClick={() => setRoomManagerOpen(true)} className="rounded-full bg-background px-5 py-2.5 text-sm disabled:opacity-40">Manage rooms</button></div>
-                {roomManagerOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-3" role="dialog" aria-modal="true">
-                  <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-background">
-                    <div className="flex items-center justify-between border-b border-cream p-5"><div><h3 className="text-xl font-medium">Manage PG rooms</h3><p className="text-sm text-muted-foreground">{rooms.length} rooms</p></div><button type="button" onClick={() => setRoomManagerOpen(false)} aria-label="Close"><X /></button></div>
-                    <div className="flex flex-wrap gap-2 border-b border-cream p-4">{cats.map((c) => <button type="button" key={c} onClick={() => { setActiveRoomCategory(c); setRoomPage(0); }} className={`rounded-full px-4 py-2 text-sm ${activeRoomCategory === c ? "bg-primary text-primary-foreground" : "bg-cream"}`}>{c} seater ({roomsUsing(c)})</button>)}</div>
-                    <div className="min-h-0 flex-1 overflow-y-auto p-4">{(() => {
-                      const list = rooms.map((room, index) => ({ room, index })).filter(({ room }) => Number(room.capacity) === activeRoomCategory);
-                      const pages = Math.max(1, Math.ceil(list.length / 10));
-                      return <><div className="space-y-3">{list.slice(roomPage * 10, roomPage * 10 + 10).map(({ room, index }) => <div key={room.id ?? index} className="rounded-2xl bg-cream/60 p-4"><div className="grid gap-3 sm:grid-cols-3"><F label="Room name"><input className={sm} value={room.label} onChange={(e) => updateRoom(index, { label: e.target.value })} required /></F><F label="Rent per person / month (₹)"><input className={sm} type="number" min={0} value={room.rent} onChange={(e) => updateRoom(index, { rent: e.target.value })} required /></F><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Occupied {room.occupied}/{room.capacity}</span><label className="text-sm"><input type="checkbox" checked={room.ac} onChange={(e) => updateRoom(index, { ac: e.target.checked })} /> AC</label></div></div><div className="mt-2 text-right"><button type="button" disabled={Number(room.occupied) > 0} onClick={() => { setRooms((rs) => rs.filter((_, i) => i !== index)); setCategoryCounts((v) => ({ ...v, [activeRoomCategory]: String(Math.max(0, Number(v[activeRoomCategory] || 0) - 1)) })); if (roomsUsing(activeRoomCategory) <= 1) setCats((cs) => cs.filter((c) => c !== activeRoomCategory)); }} className="text-sm text-destructive disabled:opacity-40">Remove room</button></div></div>)}</div><div className="mt-4 flex items-center justify-between text-sm"><span>Page {roomPage + 1} of {pages}</span><div className="flex gap-2"><button type="button" disabled={roomPage === 0} onClick={() => setRoomPage((v) => Math.max(0, v - 1))} className="rounded-full bg-cream px-4 py-2 disabled:opacity-40">Previous</button><button type="button" disabled={roomPage + 1 >= pages} onClick={() => setRoomPage((v) => Math.min(pages - 1, v + 1))} className="rounded-full bg-cream px-4 py-2 disabled:opacity-40">Next</button></div></div></>;
-                    })()}</div>
-                    <div className="flex justify-end border-t border-cream p-4"><button type="button" onClick={() => setRoomManagerOpen(false)} className="rounded-full bg-primary px-6 py-2.5 text-sm text-primary-foreground">Done</button></div>
-                  </div>
-                </div>}
+                <div className="sm:col-span-2 rounded-2xl bg-cream p-4">
+                  <p className="font-medium">Summary · {floorCount} floors · {rooms.length} rooms</p>
+                  {rooms.length === 0 || floorCount === 0 ? <p className="mt-1 text-sm text-muted-foreground">No rooms configured yet.</p> : (
+                    <ul className="mt-2 space-y-1 text-sm">
+                      {floorList.map((f) => {
+                        const here = roomsOn(f);
+                        const parts = cats.map((c) => ({ c, n: here.filter(({ room }) => Number(room.capacity) === c).length })).filter((p) => p.n > 0).map((p) => `${p.n} × ${p.c}-seater`).join(", ");
+                        return <li key={f} className="flex justify-between gap-3"><span>Floor {f}</span><span className="text-muted-foreground">{here.length ? `${here.length} rooms · ${parts}` : "No rooms yet"}</span></li>;
+                      })}
+                    </ul>
+                  )}
+                </div>
               </>
             ) : (
               <>
@@ -579,6 +614,12 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
                 )}
                 <p className="mt-3 text-xs text-muted-foreground">Taken from the owner&apos;s account. To change it, update the owner&apos;s profile.</p>
               </div>
+            )}
+            {!editing && role === "PROPERTY_ADMIN" && (
+              <F label="Co-owner email (optional)" wide>
+                <input className="field" name="coOwnerEmail" type="email" placeholder="coowner@example.com" autoComplete="off" />
+                <span className="text-xs text-muted-foreground">The co-owner must already be a verified Property Admin. They&apos;ll be asked to upload their own proof documents.</span>
+              </F>
             )}
           </Section>
 

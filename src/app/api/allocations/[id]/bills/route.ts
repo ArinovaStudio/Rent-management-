@@ -1,0 +1,56 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { getCurrentUser } from "@/lib/current-user";
+import { canOperateProperty } from "@/lib/property-access";
+
+const TYPES = ["ELECTRICITY", "WATER"] as const;
+
+async function load(id: string) {
+  const me = await getCurrentUser();
+  if (!me) return { error: NextResponse.json({ error: "Not signed in." }, { status: 401 }) };
+  const allocation = await prisma.allocation.findUnique({ where: { id }, include: { room: { include: { property: true } } } });
+  if (!allocation || !(await canOperateProperty(me, allocation.room.property))) {
+    return { error: NextResponse.json({ error: "You can't manage this resident." }, { status: 403 }) };
+  }
+  return { me, allocation };
+}
+
+// Sets one bill for a month: creates it, or updates it if that month already has one
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const g = await load(id);
+  if ("error" in g) return g.error;
+
+  const b = await req.json().catch(() => ({}));
+  const type = TYPES.find((t) => t === b.type);
+  const period = String(b.period ?? "");
+  const amount = Number(b.amount);
+  const note = typeof b.note === "string" ? b.note.trim().slice(0, 300) : "";
+
+  if (!type) return NextResponse.json({ error: "Choose electricity or water." }, { status: 400 });
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return NextResponse.json({ error: "Choose a valid month." }, { status: 400 });
+  if (String(b.amount ?? "").trim() === "" || !Number.isInteger(amount) || amount < 0 || amount > 10_000_000) {
+    return NextResponse.json({ error: "Enter the bill amount in whole rupees." }, { status: 400 });
+  }
+
+  const key = { allocationId_type_period: { allocationId: id, type, period } };
+  const existing = await prisma.residentBill.findUnique({ where: key, select: { paid: true, paidAt: true } });
+  const paid = b.paid === true;
+  // Keep the original payment date if the bill was already paid
+  const paidAt = paid ? (existing?.paid ? existing.paidAt ?? new Date() : new Date()) : null;
+  const bill = await prisma.residentBill.upsert({
+    where: key,
+    create: { allocationId: id, type, period, amount, note: note || null, paid, paidAt, createdById: g.me.id },
+    update: { amount, note: note || null, paid, paidAt },
+  });
+  return NextResponse.json(bill, { status: 201 });
+}
+
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const g = await load(id);
+  if ("error" in g) return g.error;
+  const { billId } = await req.json().catch(() => ({}));
+  await prisma.residentBill.deleteMany({ where: { id: String(billId ?? ""), allocationId: id } });
+  return NextResponse.json({ ok: true });
+}
