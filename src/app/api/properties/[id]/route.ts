@@ -115,6 +115,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
       : null;
 
+  // Room photos: kept paths must already belong to that room; new files are saved before the transaction
+  for (const input of parsed.rooms) {
+    const owned = new Set((property.rooms.find((r) => r.id === input.id)?.images ?? []) as string[]);
+    if (input.images.some((p) => !owned.has(p))) return NextResponse.json({ error: "Invalid room photo." }, { status: 400 });
+  }
+  const newRoomPhotoPaths = await Promise.all(parsed.roomFiles.map((files) => Promise.all(files.map((f) => saveFile(f, "rooms", "image")))));
+  const finalRoomPhotos = parsed.rooms.map((r, i) => [...r.images, ...newRoomPhotoPaths[i]]);
+  const finalPhotoSet = new Set(finalRoomPhotos.flat());
+  const removedRoomPhotos = property.rooms.flatMap((r) => (r.images as string[]).filter((p) => !finalPhotoSet.has(p)));
+
   const imagePaths = await Promise.all(parsed.images.map((f) => saveFile(f, "images", "image")));
   const categoryMediaRows = await Promise.all(parsed.categoryMedia.map(async (item) => ({
     propertyId: id,
@@ -207,6 +217,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   // Delete the old files only after the database change went through.
   await Promise.all([...removeImages, ...removeDocs, ...removeCategoryMedia].map((f) => removeFile(f.path)));
+  await Promise.all(removedRoomPhotos.map((p) => removeFile(p)));
   if (proofData && property.authorityProof) await removeSensitiveFile(property.authorityProof.path);
   if (videoPath !== undefined && property.videoPath) await removeFile(property.videoPath);
   

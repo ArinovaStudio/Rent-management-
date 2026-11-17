@@ -97,6 +97,9 @@ export async function POST(req: Request) {
     }
   }
 
+  // Room photos are saved first so their paths go into the room rows
+  const roomPhotoPaths = await Promise.all(parsed.roomFiles.map((files) => Promise.all(files.map((f) => saveFile(f, "rooms", "image")))));
+  
   let property;
   try {
     property = await prisma.property.create({
@@ -104,7 +107,7 @@ export async function POST(req: Request) {
         ...parsed.data,
         ownerId,
         status,
-        rooms: { create: parsed.rooms.map(({ id: _id, ...r }) => r) },
+        rooms: { create: parsed.rooms.map(({ id: _id, ...r }, i) => ({ ...r, images: roomPhotoPaths[i] })) },
         ...(coOwnerId ? { coOwners: { create: { userId: coOwnerId, assignedById: me.id } } } : {}),
         ...(proof && !("error" in proof)
           ? {
@@ -122,6 +125,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (err) {
+    await Promise.all(roomPhotoPaths.flat().map((p) => removeFile(p)));
     if (proof && !("error" in proof)) await removeSensitiveFile(proof.path);
     throw err;
   }

@@ -216,6 +216,7 @@ model Property {
   areaSqft    Int?
   floors      Int?
   roomsPerFloor Int?
+  totalRooms Int?
   sharing     Boolean            @default(false)
   status      ReviewStatus       @default(PENDING)
   reviewNote  String?
@@ -251,6 +252,8 @@ model Property {
   handoverDate        DateTime?
   roomLayout          Json      @default("[]")
   bathroomLayout      Json      @default("[]")
+  // PG only: offered room categories + rent, and per-floor setup (rooms, bathrooms, rent adjustment)
+  pgConfig            Json      @default("{}")
   amenities           String[]  @default([])
   features            String[]  @default([])
   nearbyPlaces        Json      @default("[]")
@@ -277,6 +280,11 @@ model Room {
   ac         Boolean  @default(false)
   rent       Int
   floor      Int?
+  roomType         String?
+  sizeSqm          Float?
+  bathroomAttached Boolean  @default(true)
+  bathroomAreaSqm  Float?
+  images           Json     @default("[]")
   createdAt  DateTime @default(now())
   allocations Allocation[]
   issues Issue[]

@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { fmtDate, inr, nextRentDue } from "@/lib/bills";
+import { fmtDate, nextRentDue } from "@/lib/bills";
+import { PAYEE, RENT_TERMS } from "@/lib/payment";
+import InvoiceView from "@/components/resident/InvoiceView";
 
 export default async function RentPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -10,32 +12,24 @@ export default async function RentPage({ params }: { params: Promise<{ token: st
   });
   if (!a) notFound();
   const property = a.room.property;
+  const due = nextRentDue(a.moveInDate);
+  const ym = `${due.getFullYear()}${String(due.getMonth() + 1).padStart(2, "0")}`;
+  const propertyAddress = `${property.address}, ${property.city}`;
 
   return (
-    <main className="wide">
-      <p><a href={`/resident/${token}`}>← Back to your details</a></p>
-      <h1>Rent</h1>
-
-      <section className="card">
-        <div className="bill-head"><strong>{inr(a.monthlyRent)} / month</strong></div>
-        <div className="bill-grid">
-          <div><span className="hint">Next due date</span><div>{fmtDate(nextRentDue(a.moveInDate))}</div></div>
-          <div><span className="hint">Last payment</span><div>Not recorded yet</div></div>
-          <div><span className="hint">Security deposit</span><div>{inr(a.securityDeposit)}</div></div>
-          <div><span className="hint">Move-in date</span><div>{fmtDate(a.moveInDate)}</div></div>
-        </div>
-      </section>
-
-      <section className="card">
-        <strong>Rented property</strong>
-        <div>{property.name} · {a.room.label}</div>
-        <div>{property.address}, {property.city}</div>
-      </section>
-
-      <section className="card">
-        <strong>Payment</strong>
-        <p className="hint">Online rent payment will be available here soon.</p>
-      </section>
-    </main>
+    <InvoiceView
+      data={{
+        backHref: `/resident/${token}`,
+        invoiceNo: `RENT-${ym}-${token.slice(0, 4).toUpperCase()}`,
+        issueDate: fmtDate(new Date()),
+        dueDate: fmtDate(due),
+        paid: false,
+        from: { name: property.name, address: propertyAddress },
+        to: { name: a.fullName, address: `${a.room.label}, ${propertyAddress}`, phone: a.phone },
+        items: [{ title: "Monthly rent", description: `${property.name} · ${a.room.label}`, rate: a.monthlyRent, taxPct: 0 }],
+        terms: RENT_TERMS,
+        payee: PAYEE,
+      }}
+    />
   );
 }

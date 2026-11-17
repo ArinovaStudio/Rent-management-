@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Building2, ClipboardCheck, Contact, Inbox, LayoutDashboard, LogOut, Mail, PanelLeft, ShieldCheck, Users } from "lucide-react";
 import { propertiesBase } from "@/lib/routes";
+import QueuePopup from "./QueuePopup";
 
 // TODO: point this at your real sign-out route.
 const SIGN_OUT_URL = "/api/auth/logout";
@@ -85,6 +86,7 @@ export function AdminShell({ role, name, children }: { role: string; name?: stri
             <PanelLeft className="h-5 w-5" />
           </button>
           <p className="truncate text-sm text-muted-foreground">Rental admin panel</p>
+          <div className="ml-auto"><QueuePopup role={role} /></div>
         </header>
         <main className="flex-1 p-4 md:p-8">{children}</main>
       </div>

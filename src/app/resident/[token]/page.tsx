@@ -1,7 +1,25 @@
 import { notFound } from "next/navigation";
+import { Building2, CalendarDays, FileText, Home, Mail, MapPin, Phone, ShieldCheck, Wallet } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
 import { BILL_LABEL, billDueDate, fmtDate, inr, monthLabel, nextRentDue } from "@/lib/bills";
+
+const card = "rounded-[1.75rem] bg-background p-5 md:p-6";
+const pill = "inline-flex items-center rounded-full px-5 py-2.5 text-sm";
+const primaryBtn = `${pill} bg-primary text-primary-foreground hover:bg-ink`;
+const softBtn = `${pill} bg-cream hover:bg-cream/70`;
+
+function Info({ icon: Icon, label, value }: { icon: typeof Phone; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3 rounded-2xl bg-cream/60 px-4 py-3">
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="break-words text-sm font-medium">{value}</p>
+      </div>
+    </div>
+  );
+}
 
 export default async function ResidentPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -19,100 +37,139 @@ export default async function ResidentPage({ params }: { params: Promise<{ token
   const property = resident.room.property;
   const category = resident.roomCategory ?? roomCategoryLabel(property, resident.room);
   const floor = resident.floorNumber ?? roomFloor(property, resident.room);
+  const active = resident.status === "ACTIVE";
+  const initials = resident.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
 
   return (
-    <main className="wide">
-      <h1>Resident details</h1>
+    <div className="tw min-h-screen bg-cream/60 text-foreground">
+      <main className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8 md:py-12">
+        {/* Header */}
+        <header className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">R</span>
+          <div>
+            <p className="text-lg font-medium tracking-tight">Rental <span className="text-muted-foreground">Portal</span></p>
+            <p className="text-xs text-muted-foreground">Resident details</p>
+          </div>
+        </header>
 
-      <section className="card">
-        <strong>{resident.fullName}</strong>
-        <div>{property.name} · {resident.room.label}</div>
-        <div>Room category: {category}{floor != null ? ` · Floor ${floor}` : ""}</div>
-        <div>{property.address}, {property.city}</div>
-        <div>Phone: {resident.phone}</div>
-        {resident.email && <div>Email: {resident.email}</div>}
-        <div>Move-in date: {resident.moveInDate.toLocaleDateString("en-IN")}</div>
-        <div>Monthly rent: {inr(resident.monthlyRent)}</div>
-        <div>Security deposit: {inr(resident.securityDeposit)}</div>
-        <div>Status: {resident.status === "ACTIVE" ? "Active resident" : "Checked out"}</div>
-      </section>
+        {/* Profile */}
+        <section className={card}>
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-lg font-medium text-primary">{initials || "R"}</span>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-2xl font-medium tracking-tight">{resident.fullName}</h1>
+              <p className="text-sm text-muted-foreground">{property.name} · {resident.room.label}</p>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-xs ${active ? "bg-primary/10 text-primary" : "bg-cream text-muted-foreground"}`}>{active ? "Active resident" : "Checked out"}</span>
+          </div>
 
-      <h2>Rent</h2>
-      <section className="card">
-        <div className="bill-head"><strong>Monthly rent</strong><span>{inr(resident.monthlyRent)}</span></div>
-        <div className="bill-grid">
-          <div><span className="hint">Next due date</span><div>{fmtDate(nextRentDue(resident.moveInDate))}</div></div>
-          <div><span className="hint">Last payment</span><div>Not recorded yet</div></div>
-        </div>
-        <div className="bill-actions"><a className="bill-btn" href={`/resident/${token}/rent`}>Pay rent</a></div>
-      </section>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <Info icon={Home} label="Room category" value={`${category}${floor != null ? ` · Floor ${floor}` : ""}`} />
+            <Info icon={MapPin} label="Address" value={`${property.address}, ${property.city}`} />
+            <Info icon={Phone} label="Phone" value={resident.phone} />
+            {resident.email && <Info icon={Mail} label="Email" value={resident.email} />}
+            <Info icon={CalendarDays} label="Move-in date" value={resident.moveInDate.toLocaleDateString("en-IN")} />
+            <Info icon={ShieldCheck} label="Security deposit" value={inr(resident.securityDeposit)} />
+          </div>
+        </section>
 
-      {(["ELECTRICITY", "WATER"] as const).map((t) => {
-        const list = resident.bills.filter((b) => b.type === t);
-        const last = list[0];
-        const payTarget = list.find((b) => !b.paid);
-        const lastPaid = list.find((b) => b.paid);
-        const totalDue = list.filter((b) => !b.paid).reduce((s, b) => s + b.amount, 0);
-        return (
-          <div key={t}>
-            <h2>{BILL_LABEL[t]}</h2>
-            <section className="card">
+        {/* Rent */}
+        <section className={card}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary"><Wallet className="h-5 w-5" /></span>
+              <div>
+                <h2 className="text-lg font-semibold">Monthly rent</h2>
+                <p className="text-sm text-muted-foreground">Next due {fmtDate(nextRentDue(resident.moveInDate))}</p>
+              </div>
+            </div>
+            <p className="text-2xl font-medium">{inr(resident.monthlyRent)}</p>
+          </div>
+          <div className="mt-4"><a className={primaryBtn} href={`/resident/${token}/rent`}>Pay rent</a></div>
+        </section>
+
+        {/* Bills */}
+        {(["ELECTRICITY", "WATER"] as const).map((t) => {
+          const list = resident.bills.filter((b) => b.type === t);
+          const last = list[0];
+          const payTarget = list.find((b) => !b.paid);
+          const lastPaid = list.find((b) => b.paid);
+          const totalDue = list.filter((b) => !b.paid).reduce((s, b) => s + b.amount, 0);
+          return (
+            <section key={t} className={card}>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold">{BILL_LABEL[t]}</h2>
+                {last && <span className={`rounded-full px-3 py-1 text-xs ${payTarget ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`}>{payTarget ? "Due" : "All paid"}</span>}
+              </div>
+
               {!last ? (
-                <p className="hint">No {BILL_LABEL[t].toLowerCase()} bills have been added yet.</p>
+                <p className="mt-3 text-sm text-muted-foreground">No {BILL_LABEL[t].toLowerCase()} bills have been added yet.</p>
               ) : (
                 <>
-                  <div className="bill-head">
-                    <strong>{monthLabel(last.period)} · {inr(last.amount)}</strong>
-                    <span className={payTarget ? "bill-due" : "bill-paid"}>{payTarget ? "Due" : "All paid"}</span>
+                  <p className="mt-3 text-2xl font-medium">{inr(last.amount)} <span className="text-sm font-normal text-muted-foreground">· {monthLabel(last.period)}</span></p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl bg-cream/60 px-4 py-3"><p className="text-xs text-muted-foreground">Due date</p><p className="text-sm font-medium">{fmtDate(billDueDate((payTarget ?? last).period))}</p></div>
+                    <div className="rounded-2xl bg-cream/60 px-4 py-3"><p className="text-xs text-muted-foreground">Last payment</p><p className="text-sm font-medium">{lastPaid ? fmtDate(lastPaid.paidAt ?? lastPaid.updatedAt) : "—"}</p></div>
+                    <div className="rounded-2xl bg-cream/60 px-4 py-3"><p className="text-xs text-muted-foreground">Total due</p><p className="text-sm font-medium">{inr(totalDue)}</p></div>
                   </div>
-                  <div className="bill-grid">
-                    <div><span className="hint">Due date</span><div>{fmtDate(billDueDate((payTarget ?? last).period))}</div></div>
-                    <div><span className="hint">Last payment</span><div>{lastPaid ? fmtDate(lastPaid.paidAt ?? lastPaid.updatedAt) : "—"}</div></div>
-                    <div><span className="hint">Total due</span><div>{inr(totalDue)}</div></div>
+                  {last.note && <p className="mt-3 text-sm text-muted-foreground">{last.note}</p>}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {payTarget && <a className={primaryBtn} href={`/resident/${token}/bill/${payTarget.id}`}>Pay bill</a>}
+                    <a className={softBtn} href={`/resident/${token}/bill/${last.id}`}>View last bill</a>
                   </div>
-                  {last.note && <div className="hint">{last.note}</div>}
-                  <div className="bill-actions">
-                    <a className="bill-btn secondary" href={`/resident/${token}/bill/${last.id}`}>View last bill</a>
-                    {payTarget && <a className="bill-btn" href={`/resident/${token}/bill/${payTarget.id}`}>Pay bill</a>}
-                  </div>
-                  <details>
-                    <summary>View all bills ({list.length})</summary>
-                    <table>
-                      <thead><tr><th>Month</th><th>Amount</th><th>Status</th><th>Paid on</th><th></th></tr></thead>
-                      <tbody>
-                        {list.map((b) => (
-                          <tr key={b.id}>
-                            <td>{monthLabel(b.period)}</td>
-                            <td>{inr(b.amount)}</td>
-                            <td>{b.paid ? "Paid" : "Due"}</td>
-                            <td>{b.paid ? fmtDate(b.paidAt ?? b.updatedAt) : "—"}</td>
-                            <td><a href={`/resident/${token}/bill/${b.id}`}>View</a></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+
+                  <details className="group mt-4 rounded-2xl bg-cream/60 px-4 py-3">
+                    <summary className="cursor-pointer text-sm font-medium">View all bills ({list.length})</summary>
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="text-xs text-muted-foreground">
+                          <tr><th className="py-2 pr-4 font-medium">Month</th><th className="py-2 pr-4 font-medium">Amount</th><th className="py-2 pr-4 font-medium">Status</th><th className="py-2 pr-4 font-medium">Paid on</th><th /></tr>
+                        </thead>
+                        <tbody>
+                          {list.map((b) => (
+                            <tr key={b.id} className="border-t border-background">
+                              <td className="py-2 pr-4">{monthLabel(b.period)}</td>
+                              <td className="py-2 pr-4">{inr(b.amount)}</td>
+                              <td className="py-2 pr-4">{b.paid ? "Paid" : "Due"}</td>
+                              <td className="py-2 pr-4">{b.paid ? fmtDate(b.paidAt ?? b.updatedAt) : "—"}</td>
+                              <td className="py-2 text-right"><a className="text-primary underline" href={`/resident/${token}/bill/${b.id}`}>View</a></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </details>
                 </>
               )}
             </section>
+          );
+        })}
+
+        {/* Documents */}
+        <section className={card}>
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary"><Building2 className="h-5 w-5" /></span>
+            <h2 className="text-lg font-semibold">Your documents</h2>
           </div>
-        );
-      })}
+          {resident.documents.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">No documents have been uploaded.</p>
+          ) : (
+            <ul className="mt-4 space-y-2">
+              {resident.documents.map((doc) => (
+                <li key={doc.id}>
+                  <a href={`/api/resident/${token}/documents/${doc.id}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-2xl bg-cream/60 px-4 py-3 text-sm hover:bg-cream">
+                    <FileText className="h-4 w-4 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1 truncate">{doc.name}</span>
+                    <span className="text-xs text-primary">Open</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-      <h2>Your documents</h2>
-      {resident.documents.length === 0 ? (
-        <p className="muted">No documents have been uploaded.</p>
-      ) : (
-        <ul>
-          {resident.documents.map((doc) => (
-            <li key={doc.id}>
-              <a href={`/api/resident/${token}/documents/${doc.id}`} target="_blank" rel="noreferrer">{doc.name}</a>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <p className="muted">This private link is intended only for you. Avoid sharing it publicly.</p>
-    </main>
+        <p className="px-2 text-center text-xs text-muted-foreground">This private link is meant only for you. Please don't share it publicly.</p>
+      </main>
+    </div>
   );
 }

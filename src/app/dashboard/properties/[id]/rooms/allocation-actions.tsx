@@ -21,7 +21,8 @@ export default function AllocationActions({ allocationId, residentUrl }: { alloc
 
   const btn = "rounded-full bg-background px-4 py-2 text-sm hover:bg-background/70";
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
+      <a className={btn} href={residentUrl} target="_blank" rel="noreferrer">Open link</a>
       <button type="button" className={btn} onClick={() => navigator.clipboard.writeText(`${window.location.origin}${residentUrl}`)}>
         Copy link
       </button>

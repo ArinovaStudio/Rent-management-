@@ -1,6 +1,7 @@
 import { checkFile } from "./uploads";
 import type { Role } from "./jwt";
 import { parseListingFields } from "./property-fields";
+import { parseStoredPlan, storedFloorBaths } from "./pg-config";
 
 export const MAX_SEATS = { PG: 5, OTHER: 6 };
 export const MAX_IMAGES = 10;
@@ -17,6 +18,11 @@ export type RoomInput = {
   rent: number;
   occupied: number;
   floor: number | null;
+  roomType: string | null;
+  sizeSqm: number | null;
+  bathroomAttached: boolean;
+  bathroomAreaSqm: number | null;
+  images: string[]; // saved photo paths this room keeps
 };
 
 // Reads the multipart form sent by the property form and validates it.
@@ -62,8 +68,23 @@ export function parsePropertyForm(fd: FormData, role: Role) {
   let rawRooms: unknown;
   try { rawRooms = JSON.parse(str("rooms") || "[]"); } catch { rawRooms = null; }
   if (!Array.isArray(rawRooms) || rawRooms.length === 0) return fail("Add at least one room.");
-  const roomCap = type === "PG" ? (floors.value && roomsPerFloor.value ? floors.value * roomsPerFloor.value : Infinity) : 100;
-  if (rawRooms.length > roomCap) return fail(`Too many rooms (maximum ${roomCap}).`);
+  // PG: the rooms come from the floor setup (categories, rooms and bathrooms per floor), so the total is simply
+  // the number of rooms generated. Sharing flats/apartments keep Bedrooms as a strict limit.
+  let pgPlan: ReturnType<typeof parseStoredPlan> | null = null;
+  if (type === "PG") {
+    pgPlan = parseStoredPlan(str("pgConfig"), floors.value ?? 0);
+    if ("error" in pgPlan) return fail(pgPlan.error);
+    const planned = pgPlan.plan.floors.reduce((s, f) => s + f.rooms, 0);
+    if (planned !== rawRooms.length) return fail("The floor setup and the generated rooms do not match. Open the floor generator and save again.");
+  } else if (sharing) {
+    const declared = bedrooms.value;
+    if (!declared || declared < 1) {
+      return fail("Enter the number of bedrooms in Specifications.");
+    }
+    if (rawRooms.length > declared) {
+      return fail(`You declared ${declared} rooms but added ${rawRooms.length}. Remove ${rawRooms.length - declared} or raise the total in Specifications.`);
+    }
+  }
 
   const maxSeats = type === "PG" ? MAX_SEATS.PG : MAX_SEATS.OTHER;
   const rooms: RoomInput[] = [];
@@ -76,8 +97,20 @@ export function parsePropertyForm(fd: FormData, role: Role) {
       rent: Number(r.rent),
       occupied: Number(r.occupied ?? 0),
       floor: type === "PG" && r.floor !== "" && r.floor != null ? Number(r.floor) : null,
+      roomType: type !== "PG" && sharing ? String(r.roomType ?? "").trim().slice(0, 40) || null : null,
+      sizeSqm: type !== "PG" && String(r.sizeSqm ?? "").trim() !== "" ? Number(r.sizeSqm) : null,
+      bathroomAttached: r.bathroomAttached !== false,
+      bathroomAreaSqm: type !== "PG" && String(r.bathroomAreaSqm ?? "").trim() !== "" ? Number(r.bathroomAreaSqm) : null,
+      images: type !== "PG" && sharing && Array.isArray(r.images) ? r.images.map(String).slice(0, 5) : [],
     };
     if (!room.label) return fail("Every room needs a name.");
+    if (type !== "PG" && sharing) {
+      if (room.sizeSqm === null || !(room.sizeSqm > 0 && room.sizeSqm <= 10_000)) return fail(`${room.label}: enter the room size in m².`);
+      if (room.bathroomAreaSqm === null || !(room.bathroomAreaSqm > 0 && room.bathroomAreaSqm <= 10_000)) {
+        return fail(`${room.label}: enter the ${room.bathroomAttached ? "bathroom" : "common washroom"} area in m².`);
+      }
+    }
+    if (room.images.some((p) => !/^rooms\/[a-f0-9]+\.(jpg|png|webp)$/.test(p))) return fail("Invalid room photo.");
     if (type === "PG" && room.floor === null) return fail(`${room.label}: choose a floor.`);
     if (!Number.isInteger(room.capacity) || room.capacity < 1 || room.capacity > maxSeats) {
       return fail(`${room.label}: seats must be between 1 and ${maxSeats}.`);
@@ -93,6 +126,14 @@ export function parsePropertyForm(fd: FormData, role: Role) {
   }
   if (!sharing && (rooms.length !== 1 || rooms[0].capacity !== 1)) {
     return fail("A non-sharing property has exactly one unit.");
+  }
+  // New room photos arrive as roomImages_<room index>
+  const roomFiles: File[][] = rooms.map((_, i) =>
+    type !== "PG" && sharing ? fd.getAll(`roomImages_${i}`).filter((f): f is File => f instanceof File && f.size > 0) : []
+  );
+  for (const [i, files] of roomFiles.entries()) {
+    if (rooms[i].images.length + files.length > 5) return fail(`${rooms[i].label}: up to 5 photos per room.`);
+    for (const f of files) { const e = checkFile(f, "image"); if (e) return fail(e); }
   }
   const listing = parseListingFields(fd, role);
   if ("error" in listing) return fail(listing.error);
@@ -146,12 +187,19 @@ export function parsePropertyForm(fd: FormData, role: Role) {
       name, type, address, city, sharing, latitude, longitude,
       description: str("description") || null,
       bedrooms: type === "PG" ? null : (bedrooms.value ?? null),
-      bathrooms: bathrooms.value ?? null,
+      // PG bathrooms are counted per floor in the floor setup
+      bathrooms: pgPlan && "plan" in pgPlan ? pgPlan.plan.floors.reduce((s, f) => { const b = storedFloorBaths(pgPlan.plan, f); return s + b.attached + b.common; }, 0) : (bathrooms.value ?? null),
       areaSqft: typeof listing.data.builtUpAreaSqm === "number" ? Math.round(listing.data.builtUpAreaSqm * 10.7639) : null,
       floors: floors.value ?? null,
       roomsPerFloor: type === "PG" ? (roomsPerFloor.value ?? null) : null,
+      totalRooms: type === "PG" ? rooms.length : null,
+      pgConfig: pgPlan && "plan" in pgPlan ? pgPlan.plan : {},
+      // PG bathrooms are described by pgConfig (one count per floor), not by room category rows
+      ...(pgPlan && "plan" in pgPlan
+        ? { bathroomLayout: pgPlan.plan.floors.filter((f) => f.rooms > 0).map((f) => { const b = storedFloorBaths(pgPlan.plan, f); return { type: `Floor ${f.floor} – ${[b.attached > 0 ? `${b.attached} attached` : "", b.common > 0 ? `${b.common} common` : ""].filter(Boolean).join(", ") || "none"}`, size: "" }; }) }
+        : {}),
     },
-    rooms, images, docs, categoryMedia,
+    rooms, roomFiles, images, docs, categoryMedia,
     removeCategoryMediaIds: ids("removeCategoryMediaIds"),
     removeImageIds: ids("removeImageIds"),
     removeDocIds: ids("removeDocIds"),

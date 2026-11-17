@@ -6,6 +6,7 @@ import PropertyForm from "../../property-form";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { listingForClient } from "@/lib/property-fields";
 import { listedByInfo } from "@/lib/property-fields";
+import CoOwnerManager from "./co-owner-manager";
 
 export default async function EditPropertyPage({ params }: { params: Promise<{ id: string }> }) {
   const me = await getCurrentUser();
@@ -33,7 +34,11 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
           name: true, email: true, role: true,
           ownerProfile: { select: { legalName: true, phone: true, accountType: true } },
         },
-      }
+      },
+      coOwners: {
+        orderBy: { createdAt: "asc" },
+        include: { user: { select: { id: true, name: true, email: true } }, documents: { select: { id: true } } },
+      },
     },
   });
   if (!property || !canEditProperty(me, property)) notFound();
@@ -52,8 +57,10 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
     areaSqft: property.areaSqft,
     floors: property.floors,
     roomsPerFloor: property.roomsPerFloor,
+    totalRooms: property.totalRooms,
+    pgConfig: property.pgConfig,
     sharing: property.sharing,
-    rooms: property.rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.allocations.length, floor: r.floor })),
+    rooms: property.rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.allocations.length, floor: r.floor, roomType: r.roomType, sizeSqm: r.sizeSqm, bathroomAttached: r.bathroomAttached, bathroomAreaSqm: r.bathroomAreaSqm, images: (r.images as string[]) ?? [] })),
     images: property.images.map((i) => ({ id: i.id, path: i.path })),
     categoryMedia: property.categoryMedia.map((m) => ({ id: m.id, capacity: m.capacity, mediaType: m.mediaType, path: m.path, originalName: m.originalName })),
     documents: property.documents.map((d) => ({ id: d.id, name: d.name, path: d.path })),
@@ -76,6 +83,12 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
         <p className={`${note} bg-background text-muted-foreground`}>After you save, this property goes back to the Super Admin for review.</p>
       )}
       <PropertyForm initial={initial} role={me.role} listedBy={listedByInfo(property.owner)} />
+      <div className="mt-8">
+        <CoOwnerManager
+          propertyId={property.id}
+          coOwners={property.coOwners.map((c) => ({ userId: c.user.id, name: c.user.name, email: c.user.email, documents: c.documents.length }))}
+        />
+      </div>
     </AdminShell>
   );
 }
