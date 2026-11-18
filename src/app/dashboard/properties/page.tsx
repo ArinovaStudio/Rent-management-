@@ -1,3 +1,4 @@
+import { occupancyText } from "@/lib/occupancy";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
@@ -24,7 +25,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
         include: {
           allocations: {
             where: { status: "ACTIVE" },
-            select: { id: true },
+            select: { id: true, occupants: true },
           },
         },
       },
@@ -49,8 +50,6 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
           <p className="muted">No properties yet.</p>
         ) : (
           properties.map((p) => {
-            const cap = p.rooms.reduce((s, r) => s + r.capacity, 0);
-            const occ = p.rooms.reduce((s, r) => s + r.allocations.length, 0);
             const isCoOwner = p.coOwners.some((co) => co.userId === me.id) && p.ownerId !== me.id;
             return (
               <div key={p.id} className="card">
@@ -61,7 +60,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                   {me.role === "SUPER_ADMIN" && ` · Owner: ${p.owner.name}`}
                   {isCoOwner && " · Co-owner access"}
                 </div>
-                <div>Occupancy {occ}/{cap}{occ >= cap ? " · no rooms available" : ""}</div>
+                <div>{occupancyText(p, p.rooms)}</div>
                 {p.status === "REJECTED" && p.reviewNote && <p className="error">Rejected: {p.reviewNote}</p>}
                 {p.status === "NEEDS_MORE_INFO" && p.reviewNote && <p className="error">More information needed: {p.reviewNote}</p>}
                 <p style={{ marginBottom: 0 }}>

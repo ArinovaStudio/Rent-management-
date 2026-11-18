@@ -7,8 +7,8 @@ import { authFetch } from "@/lib/fetch-auth";
 
 export type CatSlot = { capacity: number; ac: boolean; rent: number; beds: number; occupied: number };
 export type FloorSlot = { floor: number; cats: CatSlot[] };
-export type UnitOption = { id: string; label: string; category: string; floor: number | null; rent: number; capacity: number; occupied: number };
-
+// A flat rented as one whole unit: one rent, and it holds up to `capacity` people.
+export type WholeFlat = { rent: number; capacity: number; occupied: number; open: boolean };
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 export const catName = (c: { capacity: number; ac: boolean }) => `${c.capacity}-seater${c.ac ? " AC" : ""}`;
 const MAX_FILES = 8;
@@ -16,21 +16,26 @@ const MAX_MB = 10;
 const OK_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 const size = (b: number) => (b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
-export default function AllocationForm({ propertyId, isPg, floors, units }: { propertyId: string; isPg: boolean; floors: FloorSlot[]; units: UnitOption[] }) {
+export default function AllocationForm({ propertyId, mode, showFloors, floors, whole }: {
+  propertyId: string;
+  mode: "category" | "whole"; // category = PG or a flat rented room by room; whole = the flat goes to one tenant
+  showFloors: boolean;
+  floors: FloorSlot[];
+  whole?: WholeFlat;
+}) {
+  const isPg = mode === "category";
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const freeUnits = units.filter((u) => u.occupied < u.capacity);
   const totalFree = isPg
     ? floors.reduce((s, f) => s + f.cats.reduce((a, c) => a + (c.beds - c.occupied), 0), 0)
-    : freeUnits.length;
+    : whole ? Math.max(0, whole.capacity - whole.occupied) : 0;
 
   const firstFloorWithSpace = floors.find((f) => f.cats.some((c) => c.occupied < c.beds))?.floor ?? floors[0]?.floor ?? 1;
   const [floor, setFloor] = useState(firstFloorWithSpace);
   const [catKey, setCatKey] = useState("");
-  const [unitId, setUnitId] = useState(freeUnits[0]?.id ?? "");
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -41,8 +46,7 @@ export default function AllocationForm({ propertyId, isPg, floors, units }: { pr
 
   const curFloor = floors.find((f) => f.floor === floor);
   const selCat = curFloor?.cats.find((c) => `${c.capacity}-${c.ac}` === catKey && c.occupied < c.beds);
-  const selUnit = freeUnits.find((u) => u.id === unitId) ?? freeUnits[0];
-  const rent = isPg ? selCat?.rent : selUnit?.rent;
+    const rent = isPg ? selCat?.rent : whole && whole.occupied > 0 ? 0 : whole?.rent;
 
   useEffect(() => {
     if (!open) return;
@@ -79,7 +83,7 @@ export default function AllocationForm({ propertyId, isPg, floors, units }: { pr
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (isPg && !selCat) return setError("Select a room category first.");
-    if (!isPg && !selUnit) return setError("Select a unit first.");
+    if (!isPg && !whole?.open) return setError("This flat is already at maximum capacity.");
     setBusy(true);
     setError("");
 
@@ -88,8 +92,6 @@ export default function AllocationForm({ propertyId, isPg, floors, units }: { pr
       fd.set("capacity", String(selCat.capacity));
       fd.set("ac", String(selCat.ac));
       fd.set("floor", String(floor));
-    } else if (selUnit) {
-      fd.set("roomId", selUnit.id);
     }
     fd.delete("documents");
     files.forEach((f) => fd.append("documents", f));
@@ -111,7 +113,7 @@ export default function AllocationForm({ propertyId, isPg, floors, units }: { pr
         <div className="flex items-start justify-between gap-4 border-b border-cream p-5">
           <div>
             <h3 className="text-xl font-medium">Allocate a person</h3>
-            <p className="text-sm text-muted-foreground">{isPg ? "Pick a floor and room category, then add the person's details." : "Pick a unit, then add the person's details."}</p>
+            <p className="text-sm text-muted-foreground">{isPg ? (showFloors ? "Pick a floor and room category, then add the person's details." : "Pick a room category, then add the person's details.") : "Add each person living in this flat. The first person is the tenant who pays the rent."}</p>
           </div>
           <button type="button" onClick={close} aria-label="Close"><X className="h-5 w-5" /></button>
         </div>
@@ -136,10 +138,10 @@ export default function AllocationForm({ propertyId, isPg, floors, units }: { pr
             <form id="allocate-form" ref={formRef} onSubmit={submit} className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
               {/* Step 1: where */}
               <section>
-                <p className="mb-3 text-sm font-semibold">1 · {isPg ? "Floor & room category" : "Unit"}</p>
+                <p className="mb-3 text-sm font-semibold">1 · {isPg ? (showFloors ? "Floor & room category" : "Room category") : "Flat"}</p>
                 {isPg ? (
                   <>
-                    <div className="mb-3 flex flex-wrap gap-2">
+                    {showFloors && <div className="mb-3 flex flex-wrap gap-2">
                       {floors.map((f) => {
                         const left = f.cats.reduce((s, c) => s + (c.beds - c.occupied), 0);
                         return (
@@ -150,7 +152,7 @@ export default function AllocationForm({ propertyId, isPg, floors, units }: { pr
                           </button>
                         );
                       })}
-                    </div>
+                    </div>}
                     <div className="grid gap-2 sm:grid-cols-2">
                       {(curFloor?.cats ?? []).map((c) => {
                         const key = `${c.capacity}-${c.ac}`;
@@ -168,15 +170,17 @@ export default function AllocationForm({ propertyId, isPg, floors, units }: { pr
                           </button>
                         );
                       })}
-                      {(curFloor?.cats ?? []).length === 0 && <p className="text-sm text-muted-foreground">No rooms on this floor.</p>}
+                      {(curFloor?.cats ?? []).length === 0 && <p className="text-sm text-muted-foreground">No rooms here.</p>}
                     </div>
                   </>
                 ) : (
-                  <select className="field" value={selUnit?.id ?? ""} onChange={(e) => setUnitId(e.target.value)} required>
-                    {freeUnits.map((u) => (
-                      <option key={u.id} value={u.id}>{u.label} · {u.category}{u.floor != null ? ` · Floor ${u.floor}` : ""} · {inr(u.rent)}/month</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-primary bg-primary/5 px-4 py-3">
+                    <span>
+                      <span className="block font-medium">Entire flat</span>
+                      <span className="block text-xs text-muted-foreground">{whole ? `${inr(whole.rent)} / month for the whole flat · holds ${whole.capacity} ${whole.capacity === 1 ? "person" : "people"}` : ""}</span>
+                    </span>
+                    <span className="shrink-0 rounded-full bg-background px-3 py-1 text-xs">{whole?.open ? `${whole.occupied}/${whole.capacity} · ${whole.capacity - whole.occupied} free` : "Max occupancy"}</span>
+                  </div>
                 )}
               </section>
 
@@ -189,10 +193,10 @@ export default function AllocationForm({ propertyId, isPg, floors, units }: { pr
                   <label className={lbl}><span className={lblText}>Email (optional)</span><input className="field" name="email" type="email" /></label>
                   <label className={lbl}><span className={lblText}>Move-in date</span><input className="field" name="moveInDate" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} /></label>
                   <label className={lbl}>
-                    <span className={lblText}>Monthly rent</span>
+                    <span className={lblText}>{isPg ? "Monthly rent" : whole && whole.occupied > 0 ? "Monthly rent (housemate)" : "Monthly rent (whole flat)"}</span>
                     <div className="field flex items-center justify-between !bg-cream/60">
                       <span className="font-medium">{rent != null ? inr(rent) : "Select a category"}</span>
-                      <span className="text-xs text-muted-foreground">Set by property</span>
+                      <span className="text-xs text-muted-foreground">{isPg || !whole?.occupied ? "Set by property" : "Covered by the main tenant"}</span>
                     </div>
                   </label>
                   <label className={lbl}><span className={lblText}>Security deposit (₹)</span><input className="field" name="securityDeposit" type="number" min="0" defaultValue="0" /></label>

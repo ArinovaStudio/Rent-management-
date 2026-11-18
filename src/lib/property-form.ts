@@ -3,7 +3,7 @@ import type { Role } from "./jwt";
 import { parseListingFields } from "./property-fields";
 import { parseStoredPlan, storedFloorBaths } from "./pg-config";
 
-export const MAX_SEATS = { PG: 5, OTHER: 6 };
+export const MAX_SEATS = { PG: 5, OTHER: 6, WHOLE: 20 };
 export const MAX_IMAGES = 10;
 const TYPES = ["PG", "APARTMENT", "FLAT"] as const;
 export type PType = (typeof TYPES)[number];
@@ -86,14 +86,15 @@ export function parsePropertyForm(fd: FormData, role: Role) {
     }
   }
 
-  const maxSeats = type === "PG" ? MAX_SEATS.PG : MAX_SEATS.OTHER;
+  // A whole flat holds as many people as the owner says; rooms rented one by one keep the per-room limit
+  const maxSeats = type === "PG" ? MAX_SEATS.PG : sharing ? MAX_SEATS.OTHER : MAX_SEATS.WHOLE;
   const rooms: RoomInput[] = [];
   for (const r of rawRooms as Record<string, unknown>[]) {
     const room: RoomInput = {
       id: typeof r.id === "string" && r.id ? r.id : undefined,
       label: String(r.label ?? "").trim(),
       capacity: Number(r.capacity),
-      ac: type === "PG" && r.ac === true,
+      ac: (type === "PG" || sharing) && r.ac === true,
       rent: Number(r.rent),
       occupied: Number(r.occupied ?? 0),
       floor: type === "PG" && r.floor !== "" && r.floor != null ? Number(r.floor) : null,
@@ -124,8 +125,8 @@ export function parsePropertyForm(fd: FormData, role: Role) {
     }
     rooms.push(room);
   }
-  if (!sharing && (rooms.length !== 1 || rooms[0].capacity !== 1)) {
-    return fail("A non-sharing property has exactly one unit.");
+  if (!sharing && rooms.length !== 1) {
+    return fail("A flat rented as a whole has exactly one unit.");
   }
   // New room photos arrive as roomImages_<room index>
   const roomFiles: File[][] = rooms.map((_, i) =>

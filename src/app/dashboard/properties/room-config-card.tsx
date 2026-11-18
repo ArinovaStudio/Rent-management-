@@ -5,7 +5,7 @@ import { F } from "./property-sections";
 
 export type RoomPhoto = { key: string; src: string; path?: string; file?: File };
 export type RoomCfg = {
-  label: string; capacity: string; rent: string; occupied: string;
+  label: string; capacity: string; ac: boolean; rent: string; occupied: string;
   roomType: string; sizeSqm: string; bathAttached: boolean; bathArea: string; photos: RoomPhoto[];
 };
 
@@ -43,6 +43,14 @@ export default function RoomConfigCard({ room, onChange, onRemove, rentable, max
           <F label="Sharing capacity">
             <select className="field" value={room.capacity} onChange={(e) => onChange({ capacity: e.target.value })}>
               {Array.from({ length: maxSeats }, (_, n) => n + 1).map((n) => <option key={n} value={n}>{`${n} ${n === 1 ? "person" : "people"}`}</option>)}
+            </select>
+          </F>
+        )}
+        {rentable && (
+          <F label="Air conditioning">
+            <select className="field" value={room.ac ? "ac" : "non"} onChange={(e) => onChange({ ac: e.target.value === "ac" })}>
+              <option value="non">Non-AC</option>
+              <option value="ac">AC</option>
             </select>
           </F>
         )}

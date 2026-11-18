@@ -1,3 +1,4 @@
+import { headcount } from "@/lib/occupancy";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
@@ -17,7 +18,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         include: {
           allocations: {
             where: { status: "ACTIVE" },
-            select: { id: true },
+            select: { id: true, occupants: true },
           },
         },
       },
@@ -87,9 +88,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     const existing = property.rooms.find((r) => r.id === input.id);
 
-    if (existing && input.capacity < existing.allocations.length) {
+    if (existing && input.capacity < headcount(existing.allocations)) {
       return NextResponse.json({
-        error: `${existing.label} has ${existing.allocations.length} active residents. Capacity cannot be reduced below that number.`,
+        error: `${existing.label} has ${headcount(existing.allocations)} active residents. Capacity cannot be reduced below that number.`,
       }, { status: 400 });
     }
   }
@@ -186,7 +187,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               where: { id: roomId },
               data: {
                 ...r,
-                occupied: existing?.allocations.length ?? 0,
+                occupied: existing ? headcount(existing.allocations) : 0,
               },
             })
           : prisma.room.create({

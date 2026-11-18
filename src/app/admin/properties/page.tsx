@@ -1,3 +1,4 @@
+import { occupancy } from "@/lib/occupancy";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
@@ -29,7 +30,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
         include: {
           allocations: {
             where: { status: "ACTIVE" },
-            select: { id: true },
+            select: { id: true, occupants: true },
           },
         },
       },
@@ -62,8 +63,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
       ) : (
         <div className="space-y-4">
           {properties.map((p) => {
-            const cap = p.rooms.reduce((s, r) => s + r.capacity, 0);
-            const occ = p.rooms.reduce((s, r) => s + r.allocations.length, 0);
+            const { cap, occ, full, wholeUnit } = occupancy(p, p.rooms);
             const pct = cap ? Math.min(100, Math.round((occ / cap) * 100)) : 0;
             return (
               <Panel key={p.id}>
@@ -80,8 +80,8 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
 
                 <div className="mt-4">
                   <div className="mb-1 flex justify-between text-sm">
-                    <span>Occupancy {occ}/{cap}</span>
-                    <span className="text-muted-foreground">{occ >= cap ? "No rooms available" : `${cap - occ} available`}</span>
+                    <span>{wholeUnit ? `${occ}/${cap} people living here` : `Occupancy ${occ}/${cap}`}</span>
+                    <span className="text-muted-foreground">{wholeUnit ? (occ === 0 ? "Vacant" : full ? "Full" : "Rented") : full ? "No rooms available" : `${cap - occ} available`}</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-cream">
                     <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />

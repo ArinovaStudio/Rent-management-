@@ -4,6 +4,7 @@ import { BILL_LABEL, billDueDate, fmtDate, monthLabel } from "@/lib/bills";
 import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
 import { BILL_TERMS, payeeFor, propertyLines, type InvoiceData } from "@/lib/invoice";
 import InvoiceView from "../../invoice-view";
+import { isWholeUnit } from "@/lib/occupancy";
 
 export default async function BillPage({ params }: { params: Promise<{ token: string; billId: string }> }) {
   const { token, billId } = await params;
@@ -16,6 +17,9 @@ export default async function BillPage({ params }: { params: Promise<{ token: st
   const property = a.room.property;
   const floor = a.floorNumber ?? roomFloor(property, a.room);
   const category = a.roomCategory ?? roomCategoryLabel(property, a.room);
+  const household = isWholeUnit(property)
+    ? await prisma.allocation.count({ where: { roomId: a.roomId, status: "ACTIVE" } })
+    : a.occupants;
 
   const invoice: InvoiceData = {
     invoiceNo: `${bill.type === "ELECTRICITY" ? "ELEC" : "WATR"}-${bill.period.replace("-", "")}-${bill.id.slice(-4).toUpperCase()}`,
@@ -40,6 +44,7 @@ export default async function BillPage({ params }: { params: Promise<{ token: st
     }],
     terms: BILL_TERMS,
     backHref: `/resident/${token}`,
+    splitPeople: household,
     payee: payeeFor(property.name),
   };
 

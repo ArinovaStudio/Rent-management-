@@ -12,9 +12,10 @@ export type OccupantRoom = {
 };
 export type OccupantFloor = { floor: number; rooms: OccupantRoom[] };
 
-export default function RoomOccupants({ floors, initialFloor, label = "Room-wise view", compact = false }: {
+export default function RoomOccupants({ floors, initialFloor, label = "Room-wise view", compact = false, showFloors = true }: {
   floors: OccupantFloor[];
   initialFloor?: number;
+  showFloors?: boolean; // false for a flat: one set of rooms, no floor tabs
   label?: string;
   compact?: boolean;
 }) {
@@ -56,7 +57,7 @@ export default function RoomOccupants({ floors, initialFloor, label = "Room-wise
             <Search className="h-4 w-4 text-muted-foreground" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone or room" className="w-full bg-transparent text-sm outline-none" />
           </div>
-          {!term && (
+          {!term && showFloors && (
             <div className="flex flex-wrap gap-2">
               {floors.map((f) => {
                 const free = f.rooms.reduce((s, r) => s + (r.capacity - r.residents.length), 0);
@@ -83,7 +84,7 @@ export default function RoomOccupants({ floors, initialFloor, label = "Room-wise
                   <div key={r.id} className="rounded-2xl bg-cream/60 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-medium">{r.label}{term ? <span className="text-xs font-normal text-muted-foreground"> · Floor {r.floor}</span> : null}</p>
+                        <p className="font-medium">{r.label}{term && showFloors ? <span className="text-xs font-normal text-muted-foreground"> · Floor {r.floor}</span> : null}</p>
                         <p className="text-xs text-muted-foreground">{r.category}</p>
                       </div>
                       <span className={`shrink-0 rounded-full px-3 py-1 text-xs ${free <= 0 ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`}>{free <= 0 ? "Full" : `${free} free`}</span>

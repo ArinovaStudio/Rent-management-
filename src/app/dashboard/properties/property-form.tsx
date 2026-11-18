@@ -69,7 +69,16 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const single = initial?.rooms[0];
 
   const [type, setType] = useState<PType>(initial?.type ?? "PG");
+  // `sharing` = rent is set per room category (rooms are rented one by one, like a PG).
   const [sharing, setSharing] = useState(initial?.sharing ?? false);
+  // `shared` = several people live in this flat. Without rent by category the whole flat has one rent and we only
+  // record how many people live in it (saved as a single unit that holds that many people).
+  const [shared, setShared] = useState(initial ? initial.sharing || (single?.capacity ?? 1) > 1 : false);
+  const [persons, setPersons] = useState(() => {
+    if (!initial) return "2";
+    if (initial.sharing) return String(Math.max(2, initial.rooms.reduce((sum, r) => sum + r.capacity, 0)));
+    return String(Math.max(2, single?.capacity ?? 2));
+  });
   // Rooms as saved. PG rooms are generated from the plan below (existing rooms are kept, so residents stay);
   // rooms of sharing flats / apartments are edited directly in `sharedRooms`.
   const [initialRooms] = useState<RoomState[]>(() =>
@@ -195,8 +204,10 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const saveMedia = (media: CategoryMedia[]) => { setCategoryMedia(media); setModal(null); };
   const saveBedrooms = (next: RoomState[]) => { (sharing ? setRooms : setUnitRooms)(next); setModal(null); };
 
-  const singleOcc = Math.min(single?.occupied ?? 0, 1);
-  const totalCap = multiRoom ? rooms.reduce((s, r) => s + Number(r.capacity || 0), 0) : 1;
+  const personsN = Math.floor(Number(persons)) || 0;
+  const wholeCap = shared ? Math.max(1, personsN) : 1;
+  const singleOcc = Math.min(single?.occupied ?? 0, wholeCap);
+  const totalCap = multiRoom ? rooms.reduce((s, r) => s + Number(r.capacity || 0), 0) : wholeCap;
   const totalOcc = multiRoom ? rooms.reduce((s, r) => s + Number(r.occupied || 0), 0) : singleOcc;
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -219,7 +230,9 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
       if (issue) return stop(issue);
     }
     if (multiRoom && rooms.length === 0) return stop("Add at least one room.");
+    if (!isPG && shared && (personsN < 2 || personsN > 20)) return stop("Enter how many people live in this flat (2 to 20).");
     if (multiRoom && !isPG && declaredRooms < 1) return stop("Enter the number of bedrooms in Specifications.");
+    if (multiRoom && !isPG && totalCap > personsN) return stop(`Your rooms hold ${totalCap} people but you said ${personsN} live here. Raise the number of persons or reduce the room sharing.`);
     if (multiRoom && !isPG && rooms.length > declaredRooms) return stop(`You declared ${declaredRooms} rooms but added ${rooms.length}.`);
     if (multiRoom) {
       // Room names and rents are edited in the popups, outside the form, so they are checked here
@@ -235,7 +248,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     const payload = multiRoom
       ? rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.occupied, floor: r.floor, roomType: r.roomType, sizeSqm: r.sizeSqm, bathroomAttached: r.bathAttached, bathroomAreaSqm: r.bathArea, images: r.photos.filter((p) => p.path).map((p) => p.path) }))
       // A single unit's rent is the Rent field (falls back to what was saved before)
-      : [{ id: single?.id, label: "Entire property", capacity: 1, ac: false, rent: Number(price) > 0 ? price : String(single?.rent ?? 0), occupied: singleOcc }];
+      : [{ id: single?.id, label: "Entire property", capacity: wholeCap, ac: false, rent: Number(price) > 0 ? price : String(single?.rent ?? 0), occupied: singleOcc }];
     fd.set("rooms", JSON.stringify(payload));
     // PG: the plan is saved with the property so it can be edited again; totals come from the floors
     fd.set("pgConfig", isPG ? JSON.stringify(toStored(plan, floorCount)) : "{}");
@@ -378,7 +391,15 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             </div>
 
             {!isPG && (
-              <ToggleRow title="Rent bedroom by bedroom" desc="Off: the whole flat goes to one tenant, and friends living together can split rent and bills from their own link. On: each bedroom is rented separately." name="sharing" checked={sharing} onChange={(e) => setSharing(e.target.checked)} />
+              <>
+                <ToggleRow title="Shared flat" desc="Friends or flatmates will live here together." name="sharedLiving" checked={shared} onChange={(e) => { setShared(e.target.checked); if (!e.target.checked) setSharing(false); }} />
+                {shared && (
+                  <>
+                    <F label="Number of persons"><input className="field" type="number" min={2} max={20} value={persons} onChange={(e) => setPersons(e.target.value)} placeholder="e.g. 3" /></F>
+                    <ToggleRow title="Set rent by room category" desc="On: give each room its own rent (e.g. AC and non-AC differ) and allocate tenants by room category, like a PG. Off: the whole flat has one rent and we only record how many people live in it." name="sharing" checked={sharing} onChange={(e) => setSharing(e.target.checked)} />
+                  </>
+                )}
+              </>
             )}
           </Section>
 
@@ -416,7 +437,6 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
               </select>
             </F>
             <F label="Title deed number"><input className="field" name="titleDeedNumber" maxLength={50} autoComplete="off" defaultValue={L?.titleDeedNumber ?? ""} /></F>
-            {!isPG && <F label="Handover date"><input className="field" name="handoverDate" type="date" defaultValue={L?.handoverDate ?? ""} /></F>}
             <F label="Year built"><input className="field" name="yearBuilt" type="number" min={1800} max={new Date().getFullYear() + 10} defaultValue={L?.yearBuilt ?? ""} placeholder="e.g. 2022" /></F>
             <F label="Developer"><input className="field" name="developer" maxLength={120} defaultValue={L?.developer ?? ""} placeholder="Enter developer name" /></F>
             {!isPG && <PropertySummary isPG={false} floorCount={0} declaredRooms={declaredRooms} rooms={rooms} cards={sharing ? rooms : unitRooms} beds={beds} baths={baths} plan={plan} />}
@@ -442,7 +462,9 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
               <BedroomsCard sharing={sharing} cards={sharing ? rooms : unitRooms} declaredRooms={declaredRooms} onOpen={() => setModal("bedrooms")} />
             )}
             <p className="rounded-2xl bg-cream p-4 text-sm text-muted-foreground sm:col-span-2">
-              Occupancy: <strong className="text-foreground">{totalOcc}/{totalCap}</strong> {totalOcc >= totalCap ? "· no vacancy" : `· ${totalCap - totalOcc} available`}
+              {multiRoom
+                ? <>Occupancy: <strong className="text-foreground">{totalOcc}/{totalCap}</strong> {totalOcc >= totalCap ? "· no vacancy" : `· ${totalCap - totalOcc} available`}</>
+                : <>Rented as one whole flat · holds <strong className="text-foreground">{wholeCap}</strong> {wholeCap === 1 ? "person" : "people"}</>}
             </p>
             {isPG && <PropertySummary isPG floorCount={floorCount} declaredRooms={0} rooms={rooms} cards={[]} beds={beds} baths={baths} plan={plan} />}
           </Section>
@@ -457,7 +479,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
                 <p className="mt-1 text-xs text-muted-foreground">The lowest room rent is shown as the listing price.</p>
               </div>
             ) : (
-              <F label="Rent (₹ / month)"><input className="field" name="price" type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Enter monthly rent" /></F>
+              <F label={shared ? "Rent for the whole flat (₹ / month)" : "Rent (₹ / month)"}><input className="field" name="price" type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Enter monthly rent" /></F>
             )}
             <F label="Service charge (₹ / year)"><input className="field" name="serviceCharge" type="number" min={0} defaultValue={L?.serviceCharge ?? ""} placeholder="Annual service charge" /></F>
             <F label="Built-up area (m²)"><input className="field" name="builtUpAreaSqm" type="number" min={0} step="any" value={area} onChange={(e) => setArea(e.target.value)} placeholder="Enter area" /></F>

@@ -342,6 +342,7 @@ model Allocation {
   moveInDate      DateTime
   monthlyRent     Int
   securityDeposit Int              @default(0)
+  occupants       Int              @default(1) // people living under this allocation (a whole flat can have several)
 
   status          AllocationStatus @default(ACTIVE)
   accessToken     String           @unique

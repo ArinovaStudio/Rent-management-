@@ -4,6 +4,7 @@ import { fmtDate, monthLabel, nextRentDue } from "@/lib/bills";
 import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
 import { RENT_TERMS, payeeFor, propertyLines, type InvoiceData } from "@/lib/invoice";
 import InvoiceView from "../invoice-view";
+import { isWholeUnit } from "@/lib/occupancy";
 
 export default async function RentPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -18,7 +19,10 @@ export default async function RentPage({ params }: { params: Promise<{ token: st
   const period = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}`;
   const category = a.roomCategory ?? roomCategoryLabel(property, a.room);
   const floor = a.floorNumber ?? roomFloor(property, a.room);
-
+  const household = isWholeUnit(property)
+    ? await prisma.allocation.count({ where: { roomId: a.roomId, status: "ACTIVE" } })
+    : a.occupants;
+  
   const invoice: InvoiceData = {
     invoiceNo: `RENT-${token.slice(0, 4).toUpperCase()}-${period.replace("-", "")}`,
     kind: "RENT",
@@ -37,6 +41,7 @@ export default async function RentPage({ params }: { params: Promise<{ token: st
     items: [{ title: `Monthly rent · ${monthLabel(period)}`, description: `${category} · ${a.room.label}`, rate: a.monthlyRent, taxPct: 0 }],
     terms: RENT_TERMS,
     backHref: `/resident/${token}`,
+    splitPeople: household,
     payee: payeeFor(property.name),
   };
 

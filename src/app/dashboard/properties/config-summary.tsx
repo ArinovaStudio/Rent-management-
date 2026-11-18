@@ -132,7 +132,7 @@ export function BedroomsCard({ sharing, cards, declaredRooms, onOpen }: {
             <li key={r.id ?? i} className="flex flex-wrap justify-between gap-3">
               <span>{r.label}{r.roomType && r.roomType !== "Bedroom" ? ` (${r.roomType})` : ""}</span>
               <span className={incomplete(r) ? "text-destructive" : "text-muted-foreground"}>
-                {incomplete(r) ? "Details missing" : `${sharing ? `${r.capacity} sharing · ` : ""}${r.sizeSqm} m² · ${r.bathAttached ? "attached" : "common"} bathroom${sharing ? ` · ₹${Number(r.rent).toLocaleString("en-IN")}` : ""}`}
+                {incomplete(r) ? "Details missing" : `${sharing ? `${r.capacity} sharing${r.ac ? " · AC" : ""} · ` : ""}${r.sizeSqm} m² · ${r.bathAttached ? "attached" : "common"} bathroom${sharing ? ` · ₹${Number(r.rent).toLocaleString("en-IN")}` : ""}`}
               </span>
             </li>
           ))}

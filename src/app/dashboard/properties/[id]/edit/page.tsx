@@ -1,3 +1,4 @@
+import { headcount } from "@/lib/occupancy";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
@@ -21,7 +22,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
         include: {
           allocations: {
             where: { status: "ACTIVE" },
-            select: { id: true },
+            select: { id: true, occupants: true },
           },
         },
       },
@@ -60,7 +61,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
     totalRooms: property.totalRooms,
     pgConfig: property.pgConfig,
     sharing: property.sharing,
-    rooms: property.rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.allocations.length, floor: r.floor, roomType: r.roomType, sizeSqm: r.sizeSqm, bathroomAttached: r.bathroomAttached, bathroomAreaSqm: r.bathroomAreaSqm, images: (r.images as string[]) ?? [] })),
+    rooms: property.rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: headcount(r.allocations), floor: r.floor, roomType: r.roomType, sizeSqm: r.sizeSqm, bathroomAttached: r.bathroomAttached, bathroomAreaSqm: r.bathroomAreaSqm, images: (r.images as string[]) ?? [] })),
     images: property.images.map((i) => ({ id: i.id, path: i.path })),
     categoryMedia: property.categoryMedia.map((m) => ({ id: m.id, capacity: m.capacity, mediaType: m.mediaType, path: m.path, originalName: m.originalName })),
     documents: property.documents.map((d) => ({ id: d.id, name: d.name, path: d.path })),

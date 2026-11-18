@@ -40,7 +40,7 @@ export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
 
   const { sub, tax, total } = invoiceTotals(invoice.items);
   const paid = invoice.status === "PAID";
-
+  const canSplit = (invoice.splitPeople ?? 1) > 1; // solo tenant: no split section
   // ---- split maths, in paise so nothing gets lost to rounding ----
   const totalPaise = Math.round(total * 100);
   const each = Math.floor(totalPaise / people);
@@ -170,41 +170,42 @@ export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
           {!paid && (
             <>
               {/* Split */}
-              <div className="space-y-3">
-                <p className="flex items-center gap-2 text-sm font-medium"><Users className="h-4 w-4 text-primary" />Living with others?</p>
-                <div className="flex gap-2">
-                  <button type="button" className={seg(mode === "full")} onClick={() => setMode("full")}>Pay full</button>
-                  <button type="button" className={seg(mode === "equal")} onClick={() => setMode("equal")}>Split equally</button>
-                  <button type="button" className={seg(mode === "custom")} onClick={() => setMode("custom")}>My amount</button>
-                </div>
-
-                {mode !== "full" && (
-                  <label className="flex items-center justify-between gap-3 text-sm">
-                    <span>People sharing</span>
-                    <span className="flex items-center gap-3">
-                      <button type="button" aria-label="Fewer people" className="h-8 w-8 rounded-full bg-cream" onClick={() => setPeople(Math.max(2, people - 1))}>−</button>
-                      <span className="w-4 text-center font-medium">{people}</span>
-                      <button type="button" aria-label="More people" className="h-8 w-8 rounded-full bg-cream" onClick={() => setPeople(Math.min(10, people + 1))}>+</button>
-                    </span>
-                  </label>
-                )}
-
-                {mode === "equal" && (
-                  <p className="rounded-2xl bg-cream/60 px-4 py-3 text-xs text-gray-600">
-                    Everyone pays {money(each / 100)}{equalMine !== each ? ` (you pay ${money(equalMine / 100)} to cover the odd paise)` : ""}. Share this link so each person can pay their part.
-                  </p>
-                )}
-
-                {mode === "custom" && (
-                  <div className="space-y-2">
-                    <label className="block text-sm">Amount you will pay
-                      <input className={`${fieldCls} mt-1`} type="number" min={0} max={total} inputMode="decimal" value={mine} onChange={(e) => setMine(e.target.value)} placeholder="₹ 0" />
-                    </label>
-                    <p className={`rounded-2xl px-4 py-2.5 text-xs ${customRemaining === 0 ? "bg-primary/10 text-primary" : "bg-cream/60 text-gray-600"}`}>
-                      Remaining <span className="font-semibold">{money(customRemaining / 100)} / {money(total)}</span>
-                      {customRemaining > 0 && people > 1 ? ` · about ${money(customRemaining / 100 / (people - 1))} each for the other ${people - 1}` : ""}
-                    </p>
+              { canSplit && (
+                <div className="space-y-3">
+                  <p className="flex items-center gap-2 text-sm font-medium"><Users className="h-4 w-4 text-primary" />Living with others?</p>
+                  <div className="flex gap-2">
+                    <button type="button" className={seg(mode === "full")} onClick={() => setMode("full")}>Pay full</button>
+                    <button type="button" className={seg(mode === "equal")} onClick={() => setMode("equal")}>Split equally</button>
+                    <button type="button" className={seg(mode === "custom")} onClick={() => setMode("custom")}>My amount</button>
                   </div>
+
+                  {mode !== "full" && (
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>People sharing</span>
+                      <span className="flex items-center gap-3">
+                        <button type="button" aria-label="Fewer people" className="h-8 w-8 rounded-full bg-cream" onClick={() => setPeople(Math.max(2, people - 1))}>−</button>
+                        <span className="w-4 text-center font-medium">{people}</span>
+                        <button type="button" aria-label="More people" className="h-8 w-8 rounded-full bg-cream" onClick={() => setPeople(Math.min(10, people + 1))}>+</button>
+                      </span>
+                    </label>
+                  )}
+
+                  {mode === "equal" && (
+                    <p className="rounded-2xl bg-cream/60 px-4 py-3 text-xs text-gray-600">
+                      Everyone pays {money(each / 100)}{equalMine !== each ? ` (you pay ${money(equalMine / 100)} to cover the odd paise)` : ""}. Share this link so each person can pay their part.
+                    </p>
+                  )}
+
+                  {mode === "custom" && (
+                    <div className="space-y-2">
+                      <label className="block text-sm">Amount you will pay
+                        <input className={`${fieldCls} mt-1`} type="number" min={0} max={total} inputMode="decimal" value={mine} onChange={(e) => setMine(e.target.value)} placeholder="₹ 0" />
+                      </label>
+                      <p className={`rounded-2xl px-4 py-2.5 text-xs ${customRemaining === 0 ? "bg-primary/10 text-primary" : "bg-cream/60 text-gray-600"}`}>
+                        Remaining <span className="font-semibold">{money(customRemaining / 100)} / {money(total)}</span>
+                        {customRemaining > 0 && people > 1 ? ` · about ${money(customRemaining / 100 / (people - 1))} each for the other ${people - 1}` : ""}
+                      </p>
+                    </div>
                 )}
 
                 {mode === "full" && (
@@ -227,6 +228,7 @@ export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
                   </details>
                 )}
               </div>
+              )}
 
               {/* Payment */}
               <div className="space-y-3">

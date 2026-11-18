@@ -15,6 +15,7 @@ export type InvoiceData = {
   items: InvoiceItem[];
   terms: string[];
   backHref: string;
+  splitPeople?: number; // people living under this tenancy, used as the default for the split
   payee: { upiId: string; name: string; demo: boolean };
 };
 
