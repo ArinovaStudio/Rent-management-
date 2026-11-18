@@ -5,7 +5,8 @@ import { parseStoredPlan, storedFloorBaths } from "./pg-config";
 
 export const MAX_SEATS = { PG: 5, OTHER: 6, WHOLE: 20 };
 export const MAX_IMAGES = 10;
-const TYPES = ["PG", "APARTMENT", "FLAT"] as const;
+const TYPES = ["PG", "APARTMENT", "FLAT", "BUILDING"] as const;
+export const BUILDING_MAX_OCCUPANCY = 20;
 export type PType = (typeof TYPES)[number];
 
 export type RoomCategoryMediaInput = { capacity: number; mediaType: "IMAGE" | "VIDEO"; file: File };
@@ -62,12 +63,14 @@ export function parsePropertyForm(fd: FormData, role: Role) {
     }
   }
 
-  const sharing = type === "PG" ? true : fd.get("sharing") === "on";
-  if (type === "PG" && !(floors.value && floors.value >= 1)) return fail("Enter the number of floors.");
+  const isBuilding = type === "BUILDING";
+  const flatLike = type !== "PG" && !isBuilding;
+  const sharing = type === "PG" || isBuilding ? true : fd.get("sharing") === "on";
+  if ((type === "PG" || isBuilding) && !(floors.value && floors.value >= 1)) return fail("Enter the number of floors.");
   // Rooms
   let rawRooms: unknown;
   try { rawRooms = JSON.parse(str("rooms") || "[]"); } catch { rawRooms = null; }
-  if (!Array.isArray(rawRooms) || rawRooms.length === 0) return fail("Add at least one room.");
+  if (!Array.isArray(rawRooms) || rawRooms.length === 0) return fail(isBuilding ? "Add at least one flat." : "Add at least one room.");
   // PG: the rooms come from the floor setup (categories, rooms and bathrooms per floor), so the total is simply
   // the number of rooms generated. Sharing flats/apartments keep Bedrooms as a strict limit.
   let pgPlan: ReturnType<typeof parseStoredPlan> | null = null;
@@ -76,7 +79,7 @@ export function parsePropertyForm(fd: FormData, role: Role) {
     if ("error" in pgPlan) return fail(pgPlan.error);
     const planned = pgPlan.plan.floors.reduce((s, f) => s + f.rooms, 0);
     if (planned !== rawRooms.length) return fail("The floor setup and the generated rooms do not match. Open the floor generator and save again.");
-  } else if (sharing) {
+  } else if (flatLike && sharing) {
     const declared = bedrooms.value;
     if (!declared || declared < 1) {
       return fail("Enter the number of bedrooms in Specifications.");
@@ -87,32 +90,34 @@ export function parsePropertyForm(fd: FormData, role: Role) {
   }
 
   // A whole flat holds as many people as the owner says; rooms rented one by one keep the per-room limit
-  const maxSeats = type === "PG" ? MAX_SEATS.PG : sharing ? MAX_SEATS.OTHER : MAX_SEATS.WHOLE;
+  const maxSeats = type === "PG" ? MAX_SEATS.PG : isBuilding ? BUILDING_MAX_OCCUPANCY : sharing ? MAX_SEATS.OTHER : MAX_SEATS.WHOLE;
   const rooms: RoomInput[] = [];
   for (const r of rawRooms as Record<string, unknown>[]) {
     const room: RoomInput = {
       id: typeof r.id === "string" && r.id ? r.id : undefined,
       label: String(r.label ?? "").trim(),
       capacity: Number(r.capacity),
-      ac: (type === "PG" || sharing) && r.ac === true,
+      ac: (type === "PG" || (flatLike && sharing)) && r.ac === true,
       rent: Number(r.rent),
       occupied: Number(r.occupied ?? 0),
-      floor: type === "PG" && r.floor !== "" && r.floor != null ? Number(r.floor) : null,
-      roomType: type !== "PG" && sharing ? String(r.roomType ?? "").trim().slice(0, 40) || null : null,
-      sizeSqm: type !== "PG" && String(r.sizeSqm ?? "").trim() !== "" ? Number(r.sizeSqm) : null,
+      floor: (type === "PG" || isBuilding) && r.floor !== "" && r.floor != null ? Number(r.floor) : null,
+      roomType: isBuilding ? (r.roomType === "SHAREABLE" ? "SHAREABLE" : "SINGLE") : flatLike && sharing ? String(r.roomType ?? "").trim().slice(0, 40) || null : null,
+      sizeSqm: flatLike && String(r.sizeSqm ?? "").trim() !== "" ? Number(r.sizeSqm) : null,
       bathroomAttached: r.bathroomAttached !== false,
-      bathroomAreaSqm: type !== "PG" && String(r.bathroomAreaSqm ?? "").trim() !== "" ? Number(r.bathroomAreaSqm) : null,
-      images: type !== "PG" && sharing && Array.isArray(r.images) ? r.images.map(String).slice(0, 5) : [],
+      bathroomAreaSqm: flatLike && String(r.bathroomAreaSqm ?? "").trim() !== "" ? Number(r.bathroomAreaSqm) : null,
+      images: flatLike && sharing && Array.isArray(r.images) ? r.images.map(String).slice(0, 5) : [],
     };
-    if (!room.label) return fail("Every room needs a name.");
-    if (type !== "PG" && sharing) {
+    if (!room.label) return fail(isBuilding ? "Every flat needs a flat number." : "Every room needs a name.");
+    if (isBuilding && room.roomType === "SINGLE") room.capacity = 1;
+    if (isBuilding && room.roomType === "SHAREABLE" && room.capacity < 2) return fail(`${room.label}: a shareable flat needs a maximum occupancy of at least 2.`);
+    if (flatLike && sharing) {
       if (room.sizeSqm === null || !(room.sizeSqm > 0 && room.sizeSqm <= 10_000)) return fail(`${room.label}: enter the room size in m².`);
       if (room.bathroomAreaSqm === null || !(room.bathroomAreaSqm > 0 && room.bathroomAreaSqm <= 10_000)) {
         return fail(`${room.label}: enter the ${room.bathroomAttached ? "bathroom" : "common washroom"} area in m².`);
       }
     }
     if (room.images.some((p) => !/^rooms\/[a-f0-9]+\.(jpg|png|webp)$/.test(p))) return fail("Invalid room photo.");
-    if (type === "PG" && room.floor === null) return fail(`${room.label}: choose a floor.`);
+    if ((type === "PG" || isBuilding) && room.floor === null) return fail(`${room.label}: choose a floor.`);
     if (!Number.isInteger(room.capacity) || room.capacity < 1 || room.capacity > maxSeats) {
       return fail(`${room.label}: seats must be between 1 and ${maxSeats}.`);
     }
@@ -125,12 +130,20 @@ export function parsePropertyForm(fd: FormData, role: Role) {
     }
     rooms.push(room);
   }
+  if (isBuilding) {
+    const seen = new Set<string>();
+    for (const r of rooms) {
+      const k = `${r.floor}|${r.label.toLowerCase()}`;
+      if (seen.has(k)) return fail(`Flat ${r.label} is added twice on floor ${r.floor}.`);
+      seen.add(k);
+    }
+  }
   if (!sharing && rooms.length !== 1) {
     return fail("A flat rented as a whole has exactly one unit.");
   }
   // New room photos arrive as roomImages_<room index>
   const roomFiles: File[][] = rooms.map((_, i) =>
-    type !== "PG" && sharing ? fd.getAll(`roomImages_${i}`).filter((f): f is File => f instanceof File && f.size > 0) : []
+    flatLike && sharing ? fd.getAll(`roomImages_${i}`).filter((f): f is File => f instanceof File && f.size > 0) : []
   );
   for (const [i, files] of roomFiles.entries()) {
     if (rooms[i].images.length + files.length > 5) return fail(`${rooms[i].label}: up to 5 photos per room.`);
@@ -187,13 +200,13 @@ export function parsePropertyForm(fd: FormData, role: Role) {
       ...listing.data,
       name, type, address, city, sharing, latitude, longitude,
       description: str("description") || null,
-      bedrooms: type === "PG" ? null : (bedrooms.value ?? null),
+      bedrooms: type === "PG" || isBuilding ? null : (bedrooms.value ?? null),
       // PG bathrooms are counted per floor in the floor setup
       bathrooms: pgPlan && "plan" in pgPlan ? pgPlan.plan.floors.reduce((s, f) => { const b = storedFloorBaths(pgPlan.plan, f); return s + b.attached + b.common; }, 0) : (bathrooms.value ?? null),
       areaSqft: typeof listing.data.builtUpAreaSqm === "number" ? Math.round(listing.data.builtUpAreaSqm * 10.7639) : null,
       floors: floors.value ?? null,
       roomsPerFloor: type === "PG" ? (roomsPerFloor.value ?? null) : null,
-      totalRooms: type === "PG" ? rooms.length : null,
+      totalRooms: type === "PG" || isBuilding ? rooms.length : null,
       pgConfig: pgPlan && "plan" in pgPlan ? pgPlan.plan : {},
       // PG bathrooms are described by pgConfig (one count per floor), not by room category rows
       ...(pgPlan && "plan" in pgPlan

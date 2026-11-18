@@ -7,7 +7,7 @@ import { getVerificationStatus } from "@/lib/owner-status";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { propertiesBase } from "@/lib/routes";
 
-const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment" } as const;
+const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment", BUILDING: "Building" } as const;
 const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
 
 export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
@@ -56,7 +56,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                 <strong>{p.name}</strong>{" "}
                 <span className={`badge ${p.status.toLowerCase()}`}>{STATUS_LABEL[p.status]}</span>
                 <div className="muted" style={{ margin: "4px 0" }}>
-                  {TYPE_LABEL[p.type]}{p.sharing && p.type !== "PG" ? " (sharing)" : ""} · {p.city}
+                  {TYPE_LABEL[p.type]}{p.sharing && p.type !== "PG" && p.type !== "BUILDING" ? " (sharing)" : ""} · {p.city}
                   {me.role === "SUPER_ADMIN" && ` · Owner: ${p.owner.name}`}
                   {isCoOwner && " · Co-owner access"}
                 </div>

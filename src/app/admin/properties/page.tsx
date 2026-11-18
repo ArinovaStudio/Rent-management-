@@ -10,7 +10,7 @@ import { propertiesBase } from "@/lib/routes";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip, toneFor } from "@/app/admin/ui";
 
-const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment" } as const;
+const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment", BUILDING: "Building" } as const;
 const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
 
 const pill = "rounded-full bg-cream px-4 py-2 text-sm hover:bg-cream/70";
@@ -71,7 +71,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                   <div className="min-w-0">
                     <h2 className="truncate text-xl font-semibold">{p.name}</h2>
                     <p className="text-sm text-muted-foreground">
-                      {TYPE_LABEL[p.type]}{p.sharing && p.type !== "PG" ? " (sharing)" : ""} · {p.city}
+                      {TYPE_LABEL[p.type]}{p.sharing && p.type !== "PG" && p.type !== "BUILDING" ? " (sharing)" : ""} · {p.city}
                       {me.role === "SUPER_ADMIN" && ` · Owner: ${p.owner.name}`}
                     </p>
                   </div>

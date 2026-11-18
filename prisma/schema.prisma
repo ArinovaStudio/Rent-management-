@@ -17,6 +17,7 @@ enum PropertyType {
   PG
   APARTMENT
   FLAT
+  BUILDING
 }
 
 enum ReviewStatus {

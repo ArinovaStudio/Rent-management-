@@ -22,9 +22,10 @@ import { buildPgRooms, planFromRooms } from "./pg-plan";
 import { catKey, floorBaths, fromStored, planIssues, sameCat, splitEvenly, toStored, type PgCategory, type PgFloor, type PgPlan } from "@/lib/pg-config";
 import BedroomConfigModal from "./bedroom-config";
 import { BedroomsCard, PgRoomsCard, PropertySummary } from "./config-summary";
+import { BuildingFlatsCard, BuildingFlatsModal, flatIssue } from "./building-flats";
 
 type GalleryItem = { key: string; src: string; id?: string; file?: File };
-type PType = "PG" | "APARTMENT" | "FLAT";
+type PType = "PG" | "APARTMENT" | "FLAT" | "BUILDING";
 
 export type InitialProperty = {
   id: string;
@@ -56,6 +57,7 @@ const NAV = [["Photos & video", "photos"], ["Basics", "basics"], ["Description",
 const TYPE_OPTIONS: [PType, string, string][] = [
   ["PG", "PG", "Rooms shared by several people"],
   ["FLAT", "Flat / Apartment", "A flat, apartment or independent floor"],
+  ["BUILDING", "Building", "Several flats across floors, each rented on its own"],
 ];
 
 export default function PropertyForm({ initial, owners, role, listedBy }: {
@@ -96,7 +98,9 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   // PG plan: categories offered (with rent) and, per floor, rooms / bathrooms / categories / rent adjustment
   const [plan, setPlan] = useState<PgPlan>(() => fromStored(initial?.pgConfig) ?? planFromRooms(initialRooms));
   // Which configuration popup is open (floor generator, category media, or the apartment/flat room cards)
-  const [modal, setModal] = useState<null | "floors" | "media" | "bedrooms">(null);
+  const [modal, setModal] = useState<null | "floors" | "media" | "bedrooms" | "flats">(null);
+  // Building: one entry per flat (label "Flat 101", floor, roomType SINGLE | SHAREABLE, capacity = max occupancy)
+  const [flats, setFlats] = useState<RoomState[]>(initial?.type === "BUILDING" ? initialRooms : []);
   const [categoryMedia, setCategoryMedia] = useState<CategoryMedia[]>(() =>
     (initial?.categoryMedia ?? []).map((m) => ({ ...m, src: `/api/uploads/${m.path}` }))
   );
@@ -141,11 +145,13 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const [busy, setBusy] = useState(false);
 
   const isPG = type === "PG";
-  const multiRoom = isPG || sharing; // PG and sharing flats have a list of rooms
-  const maxSeats = isPG ? 5 : 6;
-  const floorCount = isPG ? Math.max(0, Math.floor(Number(floorsN)) || 0) : 0;
+  const isBuilding = type === "BUILDING";
+  const flatLike = !isPG && !isBuilding; // Flat / Apartment
+  const multiRoom = isPG || isBuilding || sharing; // PG, buildings and sharing flats have a list of rooms
+  const maxSeats = isPG ? 5 : isBuilding ? 20 : 6;
+  const floorCount = isPG || isBuilding ? Math.max(0, Math.floor(Number(floorsN)) || 0) : 0;
   const pgBuilt = useMemo(() => buildPgRooms(plan, floorCount, initialRooms), [plan, floorCount, initialRooms]);
-  const rooms = isPG ? pgBuilt.rooms : sharedRooms;
+  const rooms = isPG ? pgBuilt.rooms : isBuilding ? flats : sharedRooms;
   const perSqm = Number(price) > 0 && Number(area) > 0 ? Math.round(Number(price) / Number(area)) : null;
   const rents = rooms.map((r) => Number(r.rent)).filter((n) => n > 0);
   const minRent = rents.length ? Math.min(...rents) : 0;
@@ -178,7 +184,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
   const roomsUsing = (n: number) => rooms.filter((r) => Number(r.capacity) === n).length;
   const cats = Array.from(new Set(rooms.map((r) => Number(r.capacity)))).sort((a, b) => a - b);
-  const declaredRooms = isPG ? 0 : Number(beds) || 0;
+  const declaredRooms = flatLike ? Number(beds) || 0 : 0;
   const activeRooms = multiRoom ? rooms.length : unitRooms.length;
   const remaining = declaredRooms > 0 ? declaredRooms - activeRooms : null;
   const atLimit = remaining !== null && remaining <= 0;
@@ -202,6 +208,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   // The popups edit a draft copy. These apply it to the form when the admin presses Save.
   const saveFloors = (floors: PgFloor[]) => { setPlan((p) => ({ ...p, floors })); setModal(null); };
   const saveMedia = (media: CategoryMedia[]) => { setCategoryMedia(media); setModal(null); };
+  const saveFlats = (next: RoomState[]) => { setFlats(next); setModal(null); };
   const saveBedrooms = (next: RoomState[]) => { (sharing ? setRooms : setUnitRooms)(next); setModal(null); };
 
   const personsN = Math.floor(Number(persons)) || 0;
@@ -229,17 +236,22 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
       const issue = pgIssues[0];
       if (issue) return stop(issue);
     }
+    if (isBuilding) {
+      if (floorCount < 1) return stop("Enter the number of floors in Specifications.");
+      const issue = flatIssue(flats, floorCount);
+      if (issue) return stop(issue);
+    }
     if (multiRoom && rooms.length === 0) return stop("Add at least one room.");
-    if (!isPG && shared && (personsN < 2 || personsN > 20)) return stop("Enter how many people live in this flat (2 to 20).");
-    if (multiRoom && !isPG && declaredRooms < 1) return stop("Enter the number of bedrooms in Specifications.");
-    if (multiRoom && !isPG && totalCap > personsN) return stop(`Your rooms hold ${totalCap} people but you said ${personsN} live here. Raise the number of persons or reduce the room sharing.`);
-    if (multiRoom && !isPG && rooms.length > declaredRooms) return stop(`You declared ${declaredRooms} rooms but added ${rooms.length}.`);
+    if (flatLike && shared && (personsN < 2 || personsN > 20)) return stop("Enter how many people live in this flat (2 to 20).");
+    if (multiRoom && flatLike && declaredRooms < 1) return stop("Enter the number of bedrooms in Specifications.");
+    if (multiRoom && flatLike && totalCap > personsN) return stop(`Your rooms hold ${totalCap} people but you said ${personsN} live here. Raise the number of persons or reduce the room sharing.`);
+    if (multiRoom && flatLike && rooms.length > declaredRooms) return stop(`You declared ${declaredRooms} rooms but added ${rooms.length}.`);
     if (multiRoom) {
       // Room names and rents are edited in the popups, outside the form, so they are checked here
       const incomplete = rooms.find((r) => !r.label.trim() || r.rent.trim() === "");
       if (incomplete) return stop(`${incomplete.label.trim() || "A room"}: enter a room name and rent (open the room configuration to fix it).`);
     }
-    if (!isPG) {
+    if (flatLike) {
       const bad = (sharing ? rooms : unitRooms).find((r) => !(Number(r.sizeSqm) > 0) || !(Number(r.bathArea) > 0));
       if (bad) return stop(`${bad.label}: enter the room size and the ${bad.bathAttached ? "bathroom" : "common washroom"} area.`);
     }
@@ -254,7 +266,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     fd.set("pgConfig", isPG ? JSON.stringify(toStored(plan, floorCount)) : "{}");
     if (isPG) { fd.set("bathrooms", String(pgBaths)); fd.set("totalRooms", String(rooms.length)); }
     rooms.forEach((_, i) => fd.delete(`roomImages_${i}`));
-    if (!isPG && sharing) rooms.forEach((r, i) => r.photos.forEach((p) => { if (p.file) fd.append(`roomImages_${i}`, p.file); }));
+    if (flatLike && sharing) rooms.forEach((r, i) => r.photos.forEach((p) => { if (p.file) fd.append(`roomImages_${i}`, p.file); }));
     fd.set("latitude", lat);
     fd.set("longitude", lng);
     // PG rent is per room: the listing price is the lowest room rent
@@ -274,7 +286,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     });
     fd.set("removeCategoryMediaIds", JSON.stringify((initial?.categoryMedia ?? []).filter((m) => !liveMedia.some((current) => current.id === m.id)).map((m) => m.id)));
     const asRows = (rows: Pair[], a: string, b: string) => JSON.stringify(rows.filter((r) => r.a.trim() || r.b).map((r) => ({ [a]: r.a, [b]: r.b })));
-    if (isPG) {
+    if (isPG || isBuilding) {
       fd.set("roomLayout", "[]");
       fd.set("bathroomLayout", "[]"); // PG bathrooms are counted per floor (see pgConfig)
     } else {
@@ -306,6 +318,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
 
       {modal === "floors" && <FloorGeneratorModal floorCount={floorCount} plan={plan} baseRooms={initialRooms} onSave={saveFloors} onClose={() => setModal(null)} />}
       {modal === "media" && <CategoryMediaModal categories={cats.map((c) => ({ capacity: c, rooms: roomsUsing(c) }))} categoryMedia={categoryMedia} onSave={saveMedia} onClose={() => setModal(null)} />}
+      {modal === "flats" && <BuildingFlatsModal floorCount={floorCount} flats={flats} onSave={saveFlats} onClose={() => setModal(null)} />}
       {modal === "bedrooms" && <BedroomConfigModal sharing={sharing} cards={sharing ? rooms : unitRooms} declaredRooms={declaredRooms} maxSeats={maxSeats} onSave={saveBedrooms} onClose={() => setModal(null)} />}
 
       <div className="mb-8 flex flex-wrap items-center gap-4">
@@ -373,11 +386,11 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
 
             <div className="sm:col-span-2">
               <p className="mb-2 px-1 text-sm text-muted-foreground">Property type</p>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 {TYPE_OPTIONS.map(([v, t, hint]) => (
                   <label key={v} className="cursor-pointer">
                     {/* Flat and Apartment are one option now; older "APARTMENT" properties show it as selected */}
-                    <input type="radio" name="type" value={v} checked={v === "PG" ? type === "PG" : type !== "PG"} onChange={() => setType(v)} className="peer sr-only" />
+                    <input type="radio" name="type" value={v} checked={v === "FLAT" ? type === "FLAT" || type === "APARTMENT" : type === v} onChange={() => setType(v)} className="peer sr-only" />
                     <span className="flex items-center gap-3 rounded-2xl border border-transparent bg-cream p-4 transition-colors hover:border-primary/40 peer-checked:border-primary peer-checked:bg-primary/5 peer-checked:[&_.dot]:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary">
                       <span className="dot h-3 w-3 shrink-0 rounded-full bg-muted-foreground/50" />
                       <span>
@@ -390,7 +403,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
               </div>
             </div>
 
-            {!isPG && (
+            {flatLike && (
               <>
                 <ToggleRow title="Shared flat" desc="Friends or flatmates will live here together." name="sharedLiving" checked={shared} onChange={(e) => { setShared(e.target.checked); if (!e.target.checked) setSharing(false); }} />
                 {shared && (
@@ -416,13 +429,13 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
           </Section>
 
           <Section id="specifications" title="Specifications">
-            {!isPG && <F label={sharing ? "Bedrooms (limit for rooms you add)" : "Bedrooms"}><input className="field" name="bedrooms" type="number" min={0} value={beds} onChange={(e) => setBeds(e.target.value)} placeholder="Number of bedrooms" /></F>}
-            {!isPG && <F label="Bathrooms"><input className="field" name="bathrooms" type="number" min={0} value={baths} onChange={(e) => setBaths(e.target.value)} placeholder="Number of bathrooms" /></F>}
-            {isPG
+            {flatLike && <F label={sharing ? "Bedrooms (limit for rooms you add)" : "Bedrooms"}><input className="field" name="bedrooms" type="number" min={0} value={beds} onChange={(e) => setBeds(e.target.value)} placeholder="Number of bedrooms" /></F>}
+            {flatLike && <F label="Bathrooms"><input className="field" name="bathrooms" type="number" min={0} value={baths} onChange={(e) => setBaths(e.target.value)} placeholder="Number of bathrooms" /></F>}
+            {isPG || isBuilding
               ? <F label="Number of floors"><input className="field" name="floors" type="number" min={0} value={floorsN} onChange={(e) => setFloorsN(e.target.value)} /></F>
               : floorsN !== "" && <input type="hidden" name="floors" value={floorsN} />}
-            {!isPG && <F label="Parking spaces"><input className="field" name="parkingSpaces" type="number" min={0} max={100} defaultValue={L?.parkingSpaces ?? ""} /></F>}
-            {!isPG && (
+            {flatLike && <F label="Parking spaces"><input className="field" name="parkingSpaces" type="number" min={0} max={100} defaultValue={L?.parkingSpaces ?? ""} /></F>}
+            {flatLike && (
               <F label="Furnishing">
                 <select className="field" name="furnishing" defaultValue={L?.furnishing ?? ""}>
                   <option value="">Not specified</option>
@@ -439,11 +452,11 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             <F label="Title deed number"><input className="field" name="titleDeedNumber" maxLength={50} autoComplete="off" defaultValue={L?.titleDeedNumber ?? ""} /></F>
             <F label="Year built"><input className="field" name="yearBuilt" type="number" min={1800} max={new Date().getFullYear() + 10} defaultValue={L?.yearBuilt ?? ""} placeholder="e.g. 2022" /></F>
             <F label="Developer"><input className="field" name="developer" maxLength={120} defaultValue={L?.developer ?? ""} placeholder="Enter developer name" /></F>
-            {!isPG && <PropertySummary isPG={false} floorCount={0} declaredRooms={declaredRooms} rooms={rooms} cards={sharing ? rooms : unitRooms} beds={beds} baths={baths} plan={plan} />}
+            {flatLike && <PropertySummary isPG={false} floorCount={0} declaredRooms={declaredRooms} rooms={rooms} cards={sharing ? rooms : unitRooms} beds={beds} baths={baths} plan={plan} />}
           </Section>
 
-          <Section id="rooms" title={isPG ? "Floors & rooms" : "Room Configuration"} hint={isPG ? "Pick your room categories and rent, then generate the floors. Rooms are created automatically with their names and rent." : sharing ? "Configure each bedroom in the popup: sharing, size, type, bathroom, rent and photos." : "Describe each room of the unit in the popup. The whole property is rented using the Rent below."}>
-            {!isPG && (multiRoom || declaredRooms > 0) && (
+          <Section id="rooms" title={isPG ? "Floors & rooms" : isBuilding ? "Floors & flats" : "Room Configuration"} hint={isBuilding ? "Enter the number of floors, generate them and add the flats on each floor. Every flat is rented and managed on its own." : isPG ? "Pick your room categories and rent, then generate the floors. Rooms are created automatically with their names and rent." : sharing ? "Configure each bedroom in the popup: sharing, size, type, bathroom, rent and photos." : "Describe each room of the unit in the popup. The whole property is rented using the Rent below."}>
+            {flatLike && (multiRoom || declaredRooms > 0) && (
               <div className="flex items-center justify-between rounded-2xl bg-cream p-4 text-sm sm:col-span-2">
                 <span>
                   {declaredRooms > 0
@@ -453,7 +466,9 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
                 {declaredRooms > 0 && <span className={atLimit ? "text-destructive" : "text-muted-foreground"}>{atLimit ? "Limit reached" : `${remaining} remaining`}</span>}
               </div>
             )}
-            {isPG ? (
+            {isBuilding ? (
+              <BuildingFlatsCard floorCount={floorCount} flats={flats} onOpen={() => setModal("flats")} />
+            ) : isPG ? (
               <>
                 <PgCategoriesCard categories={plan.categories} roomsByKey={roomsByKey} onChange={setCategories} />
                 <PgRoomsCard floorCount={floorCount} hasCategories={plan.categories.length > 0} rooms={rooms} categoryMedia={categoryMedia} issues={pgIssues} onFloors={() => setModal("floors")} onMedia={() => setModal("media")} />
@@ -469,10 +484,10 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             {isPG && <PropertySummary isPG floorCount={floorCount} declaredRooms={0} rooms={rooms} cards={[]} beds={beds} baths={baths} plan={plan} />}
           </Section>
 
-          <Section id="rent" title="Rent & size" hint={multiRoom ? (isPG ? "Rent is set per category (and per floor) in the Rooms section." : "Rent is set per room in the Rooms section.") : undefined}>
+          <Section id="rent" title="Rent & size" hint={multiRoom ? (isPG ? "Rent is set per category (and per floor) in the Rooms section." : isBuilding ? "Rent is set per flat in the Floors & flats section." : "Rent is set per room in the Rooms section.") : undefined}>
             {multiRoom ? (
               <div className="rounded-2xl bg-cream p-5 sm:col-span-2">
-                <p className="text-sm text-muted-foreground">Rent per person / month</p>
+                <p className="text-sm text-muted-foreground">{isBuilding ? "Rent per flat / month" : "Rent per person / month"}</p>
                 <p className="mt-1 text-2xl font-medium tracking-tight">
                   {minRent ? (minRent === maxRent ? inr(minRent) : `${inr(minRent)} – ${inr(maxRent)}`) : "Add rooms to set the rent"}
                 </p>
@@ -616,8 +631,8 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
               <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{short || "Short description appears here."}</p>
               <div className="mt-4 flex gap-4 text-sm">
                 <span className="flex items-center gap-1.5"><Maximize className="h-4 w-4 text-primary" />{area || 0} m²</span>
-                {!isPG && <span className="flex items-center gap-1.5"><BedDouble className="h-4 w-4 text-primary" />{beds || 0}</span>}
-                <span className="flex items-center gap-1.5"><BathIcon className="h-4 w-4 text-primary" />{isPG ? pgBaths : baths || 0}</span>
+                {flatLike && <span className="flex items-center gap-1.5"><BedDouble className="h-4 w-4 text-primary" />{beds || 0}</span>}
+                {!isBuilding && <span className="flex items-center gap-1.5"><BathIcon className="h-4 w-4 text-primary" />{isPG ? pgBaths : baths || 0}</span>}
               </div>
             </div>
             <button disabled={busy} className="mt-2 w-full rounded-full bg-primary py-3.5 text-primary-foreground hover:bg-ink disabled:opacity-60">
