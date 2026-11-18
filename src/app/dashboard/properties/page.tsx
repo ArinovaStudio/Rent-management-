@@ -6,7 +6,7 @@ import { getVerificationStatus } from "@/lib/owner-status";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { propertiesBase } from "@/lib/routes";
 
-const TYPE_LABEL = { PG: "PG", APARTMENT: "Apartment", FLAT: "Flat" } as const;
+const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment" } as const;
 const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
 
 export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {

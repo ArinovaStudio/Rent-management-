@@ -9,7 +9,7 @@ import ReviewPanel from "../../review-panel";
 import HistoryList from "../../history-list";
 
 const LABEL = { PENDING: "Awaiting approval", NEEDS_MORE_INFO: "More information needed", APPROVED: "Approved", REJECTED: "Rejected" } as const;
-const TYPE = { PG: "PG", APARTMENT: "Apartment", FLAT: "Flat" } as const;
+const TYPE = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment" } as const;
 const fmt = (d: Date | null) => (d ? d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—");
 const link = "text-primary underline";
 

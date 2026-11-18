@@ -11,7 +11,7 @@ const FILTERS = [
   { key: "rejected", label: "Rejected", status: "REJECTED" },
 ] as const;
 const LABEL = { PENDING: "Awaiting approval", NEEDS_MORE_INFO: "More information needed", APPROVED: "Approved", REJECTED: "Rejected" } as const;
-const TYPE = { PG: "PG", APARTMENT: "Apartment", FLAT: "Flat" } as const;
+const TYPE = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment" } as const;
 
 export default async function PropertyApprovals({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const me = await requireSuperAdmin();

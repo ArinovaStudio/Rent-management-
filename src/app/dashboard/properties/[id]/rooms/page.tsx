@@ -8,6 +8,7 @@ import { propertiesBase } from "@/lib/routes";
 import { AdminShell, Panel } from "@/components/admin/AdminShell";
 import AllocationForm, { type FloorSlot, type UnitOption } from "./allocation-form";
 import AllocationActions from "./allocation-actions";
+import RoomOccupants, { type OccupantFloor } from "./room-occupants";
 import ResidentBills from "./resident-bills";
 import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
 
@@ -56,10 +57,25 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
     return { floor: fl, cats: [...map.values()].sort((a, b) => a.capacity - b.capacity || Number(a.ac) - Number(b.ac)) };
   });
 
+  // ---- Room-wise occupants (for the "who lives where" popup) ----
+  const occupantFloors: OccupantFloor[] = floorNos.map((fl) => ({
+    floor: fl,
+    rooms: property.rooms
+      .filter((r) => (r.floor ?? 0) === fl)
+      .map((r) => ({
+        id: r.id,
+        label: r.label,
+        category: catName(r),
+        capacity: r.capacity,
+        residents: r.allocations.map((a) => ({ id: a.id, name: a.fullName, phone: a.phone, moveIn: a.moveInDate.toLocaleDateString("en-IN") })),
+      })),
+  }));
+
   // ---- Apartment / flat: units ----
-  const units: UnitOption[] = property.rooms.map((r) => ({
+  const units: (UnitOption & { residents: string[] })[] = property.rooms.map((r) => ({
     id: r.id, label: r.label, category: roomCategoryLabel(property, r), floor: roomFloor(property, r),
     rent: r.rent, capacity: r.capacity, occupied: r.allocations.length,
+    residents: r.allocations.map((a) => a.fullName),
   }));
 
   // ---- Residents (flat list, grouped by floor in PG) ----
@@ -76,7 +92,10 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
           <h1 className="text-4xl font-medium tracking-tight">{property.name}</h1>
           <p className="text-muted-foreground">Room status & tenant allocation</p>
         </div>
-        <AllocationForm propertyId={property.id} isPg={isPg} floors={floors} units={units} />
+        <div className="flex flex-wrap gap-3">
+          {isPg && <RoomOccupants floors={occupantFloors} />}
+          <AllocationForm propertyId={property.id} isPg={isPg} floors={floors} units={units} />
+        </div>
       </div>
 
       <div className="space-y-6">
@@ -109,6 +128,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                     <h2 className="text-lg font-semibold">Floor {f.floor}</h2>
                     <span className={`rounded-full px-3 py-1 text-xs ${maxed ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`}>{maxed ? "Max occupancy" : `${beds - occ} beds free`}</span>
                   </div>
+                  <div className="mt-3"><RoomOccupants floors={occupantFloors} initialFloor={f.floor} label="View rooms & people" compact /></div>
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-cream"><div className="h-full rounded-full bg-primary" style={{ width: `${beds ? Math.min(100, (occ / beds) * 100) : 0}%` }} /></div>
                   <ul className="mt-4 space-y-2">
                     {f.cats.map((c) => {
@@ -142,6 +162,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                     <span>
                       <span className="block font-medium">{u.label}</span>
                       <span className="block text-xs text-muted-foreground">{u.category}{u.floor != null ? ` · Floor ${u.floor}` : ""} · {inr(u.rent)}/month</span>
+                      {u.residents.length > 0 && <span className="block text-xs">{u.residents.join(", ")}</span>}
                     </span>
                     <span className={`rounded-full px-3 py-1 text-xs ${full ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`}>{full ? "Occupied" : "Vacant"}</span>
                   </li>

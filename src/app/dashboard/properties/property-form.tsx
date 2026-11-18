@@ -55,8 +55,7 @@ export type InitialProperty = {
 const NAV = [["Photos & video", "photos"], ["Basics", "basics"], ["Description", "description"], ["Specifications", "specifications"], ["Rooms", "rooms"], ["Rent & size", "rent"], ["Amenities", "amenities"], ["Location", "location"], ["Listing", "listing"], ["Documents", "documents"]] as const;
 const TYPE_OPTIONS: [PType, string, string][] = [
   ["PG", "PG", "Rooms shared by several people"],
-  ["APARTMENT", "Apartment", "A whole apartment unit"],
-  ["FLAT", "Flat", "A flat or independent floor"],
+  ["FLAT", "Flat / Apartment", "A flat, apartment or independent floor"],
 ];
 
 export default function PropertyForm({ initial, owners, role, listedBy }: {
@@ -361,10 +360,11 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
 
             <div className="sm:col-span-2">
               <p className="mb-2 px-1 text-sm text-muted-foreground">Property type</p>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {TYPE_OPTIONS.map(([v, t, hint]) => (
                   <label key={v} className="cursor-pointer">
-                    <input type="radio" name="type" value={v} checked={type === v} onChange={() => setType(v)} className="peer sr-only" />
+                    {/* Flat and Apartment are one option now; older "APARTMENT" properties show it as selected */}
+                    <input type="radio" name="type" value={v} checked={v === "PG" ? type === "PG" : type !== "PG"} onChange={() => setType(v)} className="peer sr-only" />
                     <span className="flex items-center gap-3 rounded-2xl border border-transparent bg-cream p-4 transition-colors hover:border-primary/40 peer-checked:border-primary peer-checked:bg-primary/5 peer-checked:[&_.dot]:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary">
                       <span className="dot h-3 w-3 shrink-0 rounded-full bg-muted-foreground/50" />
                       <span>
@@ -378,7 +378,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             </div>
 
             {!isPG && (
-              <ToggleRow title="Shared accommodation" desc="Several people share this property." name="sharing" checked={sharing} onChange={(e) => setSharing(e.target.checked)} />
+              <ToggleRow title="Rent bedroom by bedroom" desc="Off: the whole flat goes to one tenant, and friends living together can split rent and bills from their own link. On: each bedroom is rented separately." name="sharing" checked={sharing} onChange={(e) => setSharing(e.target.checked)} />
             )}
           </Section>
 
