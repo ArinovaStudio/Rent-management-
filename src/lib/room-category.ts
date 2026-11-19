@@ -1,7 +1,7 @@
 // PG: "N seater". Building: "Single flat" / "Shareable flat". Apartment/flat: "N BHK" from the Bedrooms field.
 export function roomCategoryLabel(p: { type: string; bedrooms: number | null }, r: { capacity: number; roomType?: string | null }) {
   if (p.type === "PG") return `${r.capacity} seater`;
-  if (p.type === "BUILDING") return r.roomType === "SHAREABLE" ? `Shareable flat (max ${r.capacity})` : "Single flat";
+  if (p.type === "BUILDING") return r.roomType === "SHAREABLE" ? "Shareable flat" : "Single flat";
   return p.bedrooms ? `${p.bedrooms} BHK` : "Entire unit";
 }
 

@@ -285,6 +285,9 @@ model Room {
   sizeSqm          Float?
   bathroomAttached Boolean  @default(true)
   bathroomAreaSqm  Float?
+  bedrooms         Int? // Building flats: BHK
+  bathrooms        Int? // Building flats: bathroom count
+  furnishing       String? // Building flats: UNFURNISHED | SEMI_FURNISHED | FURNISHED
   images           Json     @default("[]")
   createdAt  DateTime @default(now())
   allocations Allocation[]

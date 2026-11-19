@@ -7,6 +7,7 @@ import { canOperateProperty } from "@/lib/property-access";
 import { propertiesBase } from "@/lib/routes";
 import { AdminShell, Panel } from "@/components/admin/AdminShell";
 import AllocationForm, { type FloorSlot } from "./allocation-form";
+import BuildingAllocationForm, { type BuildingFloor } from "./building-allocation-form";
 import AllocationActions from "./allocation-actions";
 import RoomOccupants, { type OccupantFloor } from "./room-occupants";
 import ResidentBills from "./resident-bills";
@@ -40,7 +41,8 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
 
   const isPg = property.type === "PG";
   // PG and flats rented room by room are handled by room category. A flat rented as a whole has no room-wise view.
-  const byCategory = isPg || property.sharing;
+  const isBuilding = property.type === "BUILDING";
+  const byCategory = (isPg || property.sharing) && !isBuilding;
   const { cap: capacity, occ: occupied, full } = occupancy(property, property.rooms);
   const available = Math.max(0, capacity - occupied);
   const name = (me as unknown as { name?: string }).name ?? "Account";
@@ -73,13 +75,23 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
       })),
   }));
 
+  // ---- Building: every flat on its own, grouped by floor ----
+  const buildingFloors: BuildingFloor[] = floorNos.map((fl) => ({
+    floor: fl,
+    flats: property.rooms.filter((r) => (r.floor ?? 0) === fl).map((r) => ({
+      id: r.id, label: r.label, shareable: r.roomType === "SHAREABLE", rent: r.rent, living: r.allocations.length, bhk: r.bedrooms,
+    })),
+  }));
+  const flatCount = property.rooms.length;
+  const vacantFlats = property.rooms.filter((r) => r.allocations.length === 0).length;
+
   // ---- Whole flat ----
   const unit = property.rooms[0];
   const whole = { rent: unit?.rent ?? 0, capacity: unit?.capacity ?? 1, occupied, open: !!unit && !full };
 
   // ---- Residents (grouped by floor in a PG, otherwise one group) ----
   const residents = property.rooms.flatMap((room) => room.allocations.map((a) => ({ a, room })));
-  const residentGroups = isPg
+  const residentGroups = isPg || isBuilding
     ? floorNos.map((fl) => ({ title: `Floor ${fl}`, list: residents.filter((x) => (x.room.floor ?? 0) === fl) })).filter((g) => g.list.length > 0)
     : residents.length ? [{ title: "Current residents", list: residents }] : [];
 
@@ -89,18 +101,35 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
         <Link href={propertiesBase(me.role)} aria-label="Back" className="flex h-11 w-11 items-center justify-center rounded-full bg-background hover:bg-cream"><ArrowLeft className="h-5 w-5" /></Link>
         <div className="min-w-0 flex-1">
           <h1 className="text-4xl font-medium tracking-tight">{property.name}</h1>
-          <p className="text-muted-foreground">{byCategory ? "Room status & tenant allocation" : "Flat status & tenant"}</p>
+          <p className="text-muted-foreground">{isBuilding ? "Flat status & tenant allocation" : byCategory ? "Room status & tenant allocation" : "Flat status & tenant"}</p>
         </div>
         <div className="flex flex-wrap gap-3">
           {byCategory && <RoomOccupants floors={occupantFloors} showFloors={isPg} />}
-          <AllocationForm propertyId={property.id} mode={byCategory ? "category" : "whole"} showFloors={isPg} floors={floors} whole={whole} />
+          {isBuilding
+            ? <BuildingAllocationForm propertyId={property.id} floors={buildingFloors} />
+            : <AllocationForm propertyId={property.id} mode={byCategory ? "category" : "whole"} showFloors={isPg} floors={floors} whole={whole} />}
         </div>
       </div>
 
       <div className="space-y-6">
         {/* Summary */}
         <div className="grid gap-4 sm:grid-cols-3">
-          {byCategory ? (
+          {isBuilding ? (
+            <>
+              <Panel className="flex items-center gap-4">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary"><Users className="h-5 w-5" /></span>
+                <div><p className="text-sm text-muted-foreground">People living here</p><p className="text-2xl font-medium">{property.rooms.reduce((s, r) => s + headcount(r.allocations), 0)}</p></div>
+              </Panel>
+              <Panel className="flex items-center gap-4">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary"><BedDouble className="h-5 w-5" /></span>
+                <div><p className="text-sm text-muted-foreground">Vacant flats</p><p className="text-2xl font-medium">{vacantFlats}<span className="text-base text-muted-foreground"> / {flatCount}</span></p></div>
+              </Panel>
+              <Panel className="flex items-center gap-4">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary"><Building2 className="h-5 w-5" /></span>
+                <div><p className="text-sm text-muted-foreground">Floors</p><p className="text-2xl font-medium">{buildingFloors.length}</p></div>
+              </Panel>
+            </>
+          ) : byCategory ? (
             <>
               <Panel className="flex items-center gap-4">
                 <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary"><Users className="h-5 w-5" /></span>
@@ -171,6 +200,37 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
           </div>
         )}
 
+        {isBuilding && (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {property.rooms.length > 0 && floorNos.map((fl) => {
+              const list = property.rooms.filter((r) => (r.floor ?? 0) === fl);
+              return (
+                <Panel key={fl}>
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-lg font-semibold">Floor {fl}</h2>
+                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs text-primary">{list.filter((r) => r.allocations.length === 0).length} vacant</span>
+                  </div>
+                  <ul className="mt-4 space-y-2">
+                    {list.map((r) => {
+                      const people = headcount(r.allocations);
+                      const tenant = r.allocations.find((a) => a.monthlyRent > 0) ?? r.allocations[0];
+                      return (
+                        <li key={r.id} className="flex items-center justify-between gap-3 rounded-2xl bg-cream/60 px-4 py-2.5 text-sm">
+                          <span className="min-w-0">
+                            <span className="block font-medium">{r.label}</span>
+                            <span className="block truncate text-xs text-muted-foreground">{r.bedrooms ? `${r.bedrooms} BHK · ` : ""}{r.roomType === "SHAREABLE" ? "Shareable" : "Single"} · {inr(r.rent)} / month{tenant ? ` · ${tenant.fullName}` : ""}</span>
+                          </span>
+                          <span className={`shrink-0 rounded-full px-3 py-1 text-xs ${people === 0 ? "bg-background" : "bg-primary/10 text-primary"}`}>{people === 0 ? "Vacant" : r.roomType === "SHAREABLE" ? `${people} ${people === 1 ? "person" : "people"}` : "Rented"}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </Panel>
+              );
+            })}
+          </div>
+        )}
+
         {byCategory && !isPg && (
           <Panel>
             <div className="flex items-center justify-between gap-3">
@@ -201,11 +261,11 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
         <Panel>
           <h2 className="text-lg font-semibold">Residents</h2>
           {residentGroups.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">{byCategory ? "No residents allocated yet. Use “Allocate a person” to add one." : "This flat is vacant. Use “Allocate a person” to rent it out."}</p>
+            <p className="mt-3 text-sm text-muted-foreground">{isBuilding ? "No residents yet. Use “Allocate flats” to rent out a flat." : byCategory ? "No residents allocated yet. Use “Allocate a person” to add one." : "This flat is vacant. Use “Allocate a person” to rent it out."}</p>
           ) : (
             <div className="mt-4 space-y-6">
               {residentGroups.map((g) => (
-                <details key={g.title} open={!isPg} className="group rounded-2xl bg-cream/40">
+                <details key={g.title} open={!isPg && !isBuilding} className="group rounded-2xl bg-cream/40">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 py-3 hover:bg-cream/70 [&::-webkit-details-marker]:hidden">
                     <span className="font-medium">{g.title}</span>
                     <span className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -222,7 +282,9 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                             <p className="font-medium">{a.fullName}</p>
                             <p className="text-muted-foreground">{a.phone}{a.email ? ` · ${a.email}` : ""}</p>
                             <p className="text-muted-foreground">
-                              {byCategory
+                              {isBuilding
+                                ? <>{room.label} · Floor {floor} · {a.roomCategory}{a.monthlyRent > 0 ? ` · Tenant · ${inr(a.monthlyRent)}/month` : " · Resident · rent covered by the tenant"}</>
+                                : byCategory
                                 ? <>{a.roomCategory ?? catName(room)}{isPg && floor != null ? ` · Floor ${floor}` : ""} · {room.label} · {inr(a.monthlyRent)}/month</>
                                 : <>Entire flat · {a.monthlyRent > 0 ? `Tenant · ${inr(a.monthlyRent)}/month` : "Housemate · rent covered by the main tenant"}</>}
                             </p>

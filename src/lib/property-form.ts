@@ -1,12 +1,11 @@
 import { checkFile } from "./uploads";
 import type { Role } from "./jwt";
-import { parseListingFields } from "./property-fields";
+import { parseListingFields, FURNISHING } from "./property-fields";
 import { parseStoredPlan, storedFloorBaths } from "./pg-config";
 
 export const MAX_SEATS = { PG: 5, OTHER: 6, WHOLE: 20 };
 export const MAX_IMAGES = 10;
 const TYPES = ["PG", "APARTMENT", "FLAT", "BUILDING"] as const;
-export const BUILDING_MAX_OCCUPANCY = 20;
 export type PType = (typeof TYPES)[number];
 
 export type RoomCategoryMediaInput = { capacity: number; mediaType: "IMAGE" | "VIDEO"; file: File };
@@ -23,6 +22,9 @@ export type RoomInput = {
   sizeSqm: number | null;
   bathroomAttached: boolean;
   bathroomAreaSqm: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  furnishing: string | null;
   images: string[]; // saved photo paths this room keeps
 };
 
@@ -90,7 +92,7 @@ export function parsePropertyForm(fd: FormData, role: Role) {
   }
 
   // A whole flat holds as many people as the owner says; rooms rented one by one keep the per-room limit
-  const maxSeats = type === "PG" ? MAX_SEATS.PG : isBuilding ? BUILDING_MAX_OCCUPANCY : sharing ? MAX_SEATS.OTHER : MAX_SEATS.WHOLE;
+  const maxSeats = type === "PG" ? MAX_SEATS.PG : isBuilding ? 1 : sharing ? MAX_SEATS.OTHER : MAX_SEATS.WHOLE;
   const rooms: RoomInput[] = [];
   for (const r of rawRooms as Record<string, unknown>[]) {
     const room: RoomInput = {
@@ -102,14 +104,22 @@ export function parsePropertyForm(fd: FormData, role: Role) {
       occupied: Number(r.occupied ?? 0),
       floor: (type === "PG" || isBuilding) && r.floor !== "" && r.floor != null ? Number(r.floor) : null,
       roomType: isBuilding ? (r.roomType === "SHAREABLE" ? "SHAREABLE" : "SINGLE") : flatLike && sharing ? String(r.roomType ?? "").trim().slice(0, 40) || null : null,
-      sizeSqm: flatLike && String(r.sizeSqm ?? "").trim() !== "" ? Number(r.sizeSqm) : null,
+      sizeSqm: (flatLike || isBuilding) && String(r.sizeSqm ?? "").trim() !== "" ? Number(r.sizeSqm) : null,
       bathroomAttached: r.bathroomAttached !== false,
       bathroomAreaSqm: flatLike && String(r.bathroomAreaSqm ?? "").trim() !== "" ? Number(r.bathroomAreaSqm) : null,
-      images: flatLike && sharing && Array.isArray(r.images) ? r.images.map(String).slice(0, 5) : [],
+      bedrooms: isBuilding && String(r.bedrooms ?? "").trim() !== "" ? Number(r.bedrooms) : null,
+      bathrooms: isBuilding && String(r.bathrooms ?? "").trim() !== "" ? Number(r.bathrooms) : null,
+      furnishing: isBuilding ? String(r.furnishing ?? "") : null,
+      images: ((flatLike && sharing) || isBuilding) && Array.isArray(r.images) ? r.images.map(String).slice(0, isBuilding ? 10 : 5) : [],
     };
     if (!room.label) return fail(isBuilding ? "Every flat needs a flat number." : "Every room needs a name.");
-    if (isBuilding && room.roomType === "SINGLE") room.capacity = 1;
-    if (isBuilding && room.roomType === "SHAREABLE" && room.capacity < 2) return fail(`${room.label}: a shareable flat needs a maximum occupancy of at least 2.`);
+    if (isBuilding) {
+      room.capacity = 1; room.occupied = 0;
+      if (room.bedrooms === null || !Number.isInteger(room.bedrooms) || room.bedrooms < 1 || room.bedrooms > 20) return fail(`${room.label}: choose how many BHK.`);
+      if (room.bathrooms === null || !Number.isInteger(room.bathrooms) || room.bathrooms < 1 || room.bathrooms > 20) return fail(`${room.label}: enter the number of bathrooms.`);
+      if (room.sizeSqm === null || !(room.sizeSqm > 0 && room.sizeSqm <= 10_000)) return fail(`${room.label}: enter the flat area in m².`);
+      if (!(FURNISHING as readonly string[]).includes(room.furnishing ?? "")) return fail(`${room.label}: choose the furnishing.`);
+    } // a flat is one unit; a shareable flat has no people limit
     if (flatLike && sharing) {
       if (room.sizeSqm === null || !(room.sizeSqm > 0 && room.sizeSqm <= 10_000)) return fail(`${room.label}: enter the room size in m².`);
       if (room.bathroomAreaSqm === null || !(room.bathroomAreaSqm > 0 && room.bathroomAreaSqm <= 10_000)) {
@@ -143,10 +153,11 @@ export function parsePropertyForm(fd: FormData, role: Role) {
   }
   // New room photos arrive as roomImages_<room index>
   const roomFiles: File[][] = rooms.map((_, i) =>
-    flatLike && sharing ? fd.getAll(`roomImages_${i}`).filter((f): f is File => f instanceof File && f.size > 0) : []
+    (flatLike && sharing) || isBuilding ? fd.getAll(`roomImages_${i}`).filter((f): f is File => f instanceof File && f.size > 0) : []
   );
   for (const [i, files] of roomFiles.entries()) {
-    if (rooms[i].images.length + files.length > 5) return fail(`${rooms[i].label}: up to 5 photos per room.`);
+    const maxPhotos = isBuilding ? 10 : 5;
+    if (rooms[i].images.length + files.length > maxPhotos) return fail(`${rooms[i].label}: up to ${maxPhotos} photos per ${isBuilding ? "flat" : "room"}.`);
     for (const f of files) { const e = checkFile(f, "image"); if (e) return fail(e); }
   }
   const listing = parseListingFields(fd, role);

@@ -80,7 +80,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
 
                 <div className="mt-4">
                   <div className="mb-1 flex justify-between text-sm">
-                    <span>{wholeUnit ? `${occ}/${cap} people living here` : `Occupancy ${occ}/${cap}`}</span>
+                    <span>{wholeUnit ? `${occ}/${cap} people living here` : (p.type === "BUILDING" ? `${occ}/${cap} flats rented` : `Occupancy ${occ}/${cap}`)}</span>
                     <span className="text-muted-foreground">{wholeUnit ? (occ === 0 ? "Vacant" : full ? "Full" : "Rented") : full ? "No rooms available" : `${cap - occ} available`}</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-cream">

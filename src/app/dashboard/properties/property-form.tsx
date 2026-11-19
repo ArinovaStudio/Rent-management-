@@ -43,7 +43,7 @@ export type InitialProperty = {
   roomsPerFloor?: number | null;
   pgConfig?: unknown;
   sharing: boolean;
-  rooms: { id: string; label: string; capacity: number; ac: boolean; rent: number; occupied: number; floor: number | null; roomType?: string | null; sizeSqm?: number | null; bathroomAttached?: boolean; bathroomAreaSqm?: number | null; images?: string[] }[];
+  rooms: { id: string; label: string; capacity: number; ac: boolean; rent: number; occupied: number; floor: number | null; roomType?: string | null; sizeSqm?: number | null; bathroomAttached?: boolean; bathroomAreaSqm?: number | null; bedrooms?: number | null; bathrooms?: number | null; furnishing?: string | null; images?: string[] }[];
   images: { id: string; path: string }[];
   categoryMedia?: { id: string; capacity: number; mediaType: "IMAGE" | "VIDEO"; path: string; originalName: string }[];
   documents: { id: string; name: string; path: string }[];
@@ -92,6 +92,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
       bathAttached: r.bathroomAttached ?? true,
       bathArea: r.bathroomAreaSqm != null ? String(r.bathroomAreaSqm) : "",
       photos: (r.images ?? []).map((p) => ({ key: p, path: p, src: `/api/uploads/${p}` })),
+      bhk: r.bedrooms != null ? String(r.bedrooms) : "", baths: r.bathrooms != null ? String(r.bathrooms) : "", furnishing: r.furnishing ?? "",
     }))
   );
   const [sharedRooms, setRooms] = useState<RoomState[]>(initialRooms);
@@ -99,7 +100,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const [plan, setPlan] = useState<PgPlan>(() => fromStored(initial?.pgConfig) ?? planFromRooms(initialRooms));
   // Which configuration popup is open (floor generator, category media, or the apartment/flat room cards)
   const [modal, setModal] = useState<null | "floors" | "media" | "bedrooms" | "flats">(null);
-  // Building: one entry per flat (label "Flat 101", floor, roomType SINGLE | SHAREABLE, capacity = max occupancy)
+  // Building: one entry per flat (label "Flat 101", floor, roomType SINGLE | SHAREABLE, no people limit for shareable)
   const [flats, setFlats] = useState<RoomState[]>(initial?.type === "BUILDING" ? initialRooms : []);
   const [categoryMedia, setCategoryMedia] = useState<CategoryMedia[]>(() =>
     (initial?.categoryMedia ?? []).map((m) => ({ ...m, src: `/api/uploads/${m.path}` }))
@@ -258,7 +259,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     const liveMedia = categoryMedia.filter((m) => cats.includes(m.capacity));
 
     const payload = multiRoom
-      ? rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.occupied, floor: r.floor, roomType: r.roomType, sizeSqm: r.sizeSqm, bathroomAttached: r.bathAttached, bathroomAreaSqm: r.bathArea, images: r.photos.filter((p) => p.path).map((p) => p.path) }))
+      ? rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.occupied, floor: r.floor, roomType: r.roomType, sizeSqm: r.sizeSqm, bathroomAttached: r.bathAttached, bathroomAreaSqm: r.bathArea, bedrooms: r.bhk, bathrooms: r.baths, furnishing: r.furnishing, images: r.photos.filter((p) => p.path).map((p) => p.path) }))
       // A single unit's rent is the Rent field (falls back to what was saved before)
       : [{ id: single?.id, label: "Entire property", capacity: wholeCap, ac: false, rent: Number(price) > 0 ? price : String(single?.rent ?? 0), occupied: singleOcc }];
     fd.set("rooms", JSON.stringify(payload));
@@ -266,7 +267,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     fd.set("pgConfig", isPG ? JSON.stringify(toStored(plan, floorCount)) : "{}");
     if (isPG) { fd.set("bathrooms", String(pgBaths)); fd.set("totalRooms", String(rooms.length)); }
     rooms.forEach((_, i) => fd.delete(`roomImages_${i}`));
-    if (flatLike && sharing) rooms.forEach((r, i) => r.photos.forEach((p) => { if (p.file) fd.append(`roomImages_${i}`, p.file); }));
+    if ((flatLike && sharing) || isBuilding) rooms.forEach((r, i) => r.photos.forEach((p) => { if (p.file) fd.append(`roomImages_${i}`, p.file); }));
     fd.set("latitude", lat);
     fd.set("longitude", lng);
     // PG rent is per room: the listing price is the lowest room rent
@@ -434,7 +435,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             {isPG || isBuilding
               ? <F label="Number of floors"><input className="field" name="floors" type="number" min={0} value={floorsN} onChange={(e) => setFloorsN(e.target.value)} /></F>
               : floorsN !== "" && <input type="hidden" name="floors" value={floorsN} />}
-            {flatLike && <F label="Parking spaces"><input className="field" name="parkingSpaces" type="number" min={0} max={100} defaultValue={L?.parkingSpaces ?? ""} /></F>}
+            {(flatLike || isBuilding) && <F label="Parking spaces in the building"><input className="field" name="parkingSpaces" type="number" min={0} max={100} defaultValue={L?.parkingSpaces ?? ""} /></F>}
             {flatLike && (
               <F label="Furnishing">
                 <select className="field" name="furnishing" defaultValue={L?.furnishing ?? ""}>
