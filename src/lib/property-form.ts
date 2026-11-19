@@ -103,7 +103,7 @@ export function parsePropertyForm(fd: FormData, role: Role) {
       rent: Number(r.rent),
       occupied: Number(r.occupied ?? 0),
       floor: (type === "PG" || isBuilding) && r.floor !== "" && r.floor != null ? Number(r.floor) : null,
-      roomType: isBuilding ? (r.roomType === "SHAREABLE" ? "SHAREABLE" : "SINGLE") : flatLike && sharing ? String(r.roomType ?? "").trim().slice(0, 40) || null : null,
+      roomType: isBuilding ? (r.roomType === "SHAREABLE" ? "SHAREABLE" : "SINGLE") : flatLike && sharing ? String(r.roomType ?? "").trim().slice(0, 40) || null : flatLike && fd.get("sharedLiving") === "on" ? "SHAREABLE" : null,
       sizeSqm: (flatLike || isBuilding) && String(r.sizeSqm ?? "").trim() !== "" ? Number(r.sizeSqm) : null,
       bathroomAttached: r.bathroomAttached !== false,
       bathroomAreaSqm: flatLike && String(r.bathroomAreaSqm ?? "").trim() !== "" ? Number(r.bathroomAreaSqm) : null,
@@ -120,6 +120,7 @@ export function parsePropertyForm(fd: FormData, role: Role) {
       if (room.sizeSqm === null || !(room.sizeSqm > 0 && room.sizeSqm <= 10_000)) return fail(`${room.label}: enter the flat area in m².`);
       if (!(FURNISHING as readonly string[]).includes(room.furnishing ?? "")) return fail(`${room.label}: choose the furnishing.`);
     } // a flat is one unit; a shareable flat has no people limit
+    if (flatLike && !sharing) { room.capacity = 1; room.occupied = 0; } // a whole flat is one unit; a shared flat has no people limit
     if (flatLike && sharing) {
       if (room.sizeSqm === null || !(room.sizeSqm > 0 && room.sizeSqm <= 10_000)) return fail(`${room.label}: enter the room size in m².`);
       if (room.bathroomAreaSqm === null || !(room.bathroomAreaSqm > 0 && room.bathroomAreaSqm <= 10_000)) {

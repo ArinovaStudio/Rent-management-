@@ -35,6 +35,7 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
   const [links, setLinks] = useState<{ name: string; flat: string; url: string }[]>([]);
   const [copied, setCopied] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -57,7 +58,7 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  function close() { setOpen(false); setError(""); setLinks([]); setFiles([]); setPicks([{ floor: firstFloor, roomId: "" }]); setMore(false); setResidents({}); }
+  function close() { setOpen(false); setError(""); setDone(false); setLinks([]); setFiles([]); setPicks([{ floor: firstFloor, roomId: "" }]); setMore(false); setResidents({}); }
   const setRes = (id: string, list: Resident[]) => setResidents((r) => ({ ...r, [id]: list }));
 
   function addFiles(list: FileList | null) {
@@ -93,6 +94,7 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
     setBusy(false);
     if (!res.ok) return setError(body.error ?? "Could not allocate.");
     setLinks((body.links ?? []).map((l: { name: string; flat: string; url: string }) => ({ ...l, url: `${window.location.origin}${l.url}` })));
+    setDone(true);
     router.refresh();
   }
 
@@ -107,12 +109,12 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
           <button type="button" onClick={close} aria-label="Close"><X className="h-5 w-5" /></button>
         </div>
 
-        {links.length > 0 ? (
+        {done ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
             <div className="mx-auto max-w-lg space-y-4 rounded-3xl bg-primary/10 p-6 text-center">
               <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground"><Check className="h-6 w-6" /></span>
-              <p className="text-lg font-medium">{links.length === 1 ? "Person allocated" : `${links.length} allocations created`}</p>
-              <p className="text-sm text-muted-foreground">Share each private link with its resident. They can see rent, bills and documents there.</p>
+              <p className="text-lg font-medium">{links.length === 0 ? "Person added" : links.length === 1 ? "Person allocated" : `${links.length} allocations created`}</p>
+              <p className="text-sm text-muted-foreground">{links.length === 0 ? "This person shares a flat that already has a main tenant, so they use that tenant's link." : "Share each link with the main tenant of that flat. Anyone sharing the flat uses the same link."}</p>
               <ul className="space-y-2 text-left">
                 {links.map((l) => (
                   <li key={l.url} className="flex items-center justify-between gap-3 rounded-2xl bg-background px-4 py-3 text-sm">

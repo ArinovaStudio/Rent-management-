@@ -347,6 +347,7 @@ model Allocation {
   monthlyRent     Int
   securityDeposit Int              @default(0)
   occupants       Int              @default(1) // people living under this allocation (a whole flat can have several)
+  isHousemate     Boolean          @default(false) // Building: shares a flat with its main tenant; no link of their own, rent and bills sit on the main tenant
 
   status          AllocationStatus @default(ACTIVE)
   accessToken     String           @unique

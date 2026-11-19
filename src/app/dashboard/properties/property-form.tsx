@@ -75,7 +75,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const [sharing, setSharing] = useState(initial?.sharing ?? false);
   // `shared` = several people live in this flat. Without rent by category the whole flat has one rent and we only
   // record how many people live in it (saved as a single unit that holds that many people).
-  const [shared, setShared] = useState(initial ? initial.sharing || (single?.capacity ?? 1) > 1 : false);
+  const [shared, setShared] = useState(initial ? initial.sharing || (single?.capacity ?? 1) > 1 || single?.roomType === "SHAREABLE" : false);
   const [persons, setPersons] = useState(() => {
     if (!initial) return "2";
     if (initial.sharing) return String(Math.max(2, initial.rooms.reduce((sum, r) => sum + r.capacity, 0)));
@@ -213,7 +213,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const saveBedrooms = (next: RoomState[]) => { (sharing ? setRooms : setUnitRooms)(next); setModal(null); };
 
   const personsN = Math.floor(Number(persons)) || 0;
-  const wholeCap = shared ? Math.max(1, personsN) : 1;
+  const wholeCap = 1; // a whole flat is one unit; a shared flat has no people limit, only a head count
   const singleOcc = Math.min(single?.occupied ?? 0, wholeCap);
   const totalCap = multiRoom ? rooms.reduce((s, r) => s + Number(r.capacity || 0), 0) : wholeCap;
   const totalOcc = multiRoom ? rooms.reduce((s, r) => s + Number(r.occupied || 0), 0) : singleOcc;
@@ -243,7 +243,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
       if (issue) return stop(issue);
     }
     if (multiRoom && rooms.length === 0) return stop("Add at least one room.");
-    if (flatLike && shared && (personsN < 2 || personsN > 20)) return stop("Enter how many people live in this flat (2 to 20).");
+    if (flatLike && shared && sharing && (personsN < 2 || personsN > 20)) return stop("Enter how many people live in this flat (2 to 20).");
     if (multiRoom && flatLike && declaredRooms < 1) return stop("Enter the number of bedrooms in Specifications.");
     if (multiRoom && flatLike && totalCap > personsN) return stop(`Your rooms hold ${totalCap} people but you said ${personsN} live here. Raise the number of persons or reduce the room sharing.`);
     if (multiRoom && flatLike && rooms.length > declaredRooms) return stop(`You declared ${declaredRooms} rooms but added ${rooms.length}.`);
@@ -409,8 +409,8 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
                 <ToggleRow title="Shared flat" desc="Friends or flatmates will live here together." name="sharedLiving" checked={shared} onChange={(e) => { setShared(e.target.checked); if (!e.target.checked) setSharing(false); }} />
                 {shared && (
                   <>
-                    <F label="Number of persons"><input className="field" type="number" min={2} max={20} value={persons} onChange={(e) => setPersons(e.target.value)} placeholder="e.g. 3" /></F>
-                    <ToggleRow title="Set rent by room category" desc="On: give each room its own rent (e.g. AC and non-AC differ) and allocate tenants by room category, like a PG. Off: the whole flat has one rent and we only record how many people live in it." name="sharing" checked={sharing} onChange={(e) => setSharing(e.target.checked)} />
+                    {sharing && <F label="Number of persons"><input className="field" type="number" min={2} max={20} value={persons} onChange={(e) => setPersons(e.target.value)} placeholder="e.g. 3" /></F>}
+                    <ToggleRow title="Set rent by room category" desc="On: give each room its own rent (e.g. AC and non-AC differ) and allocate tenants by room category, like a PG. Off: the whole flat has one rent and any number of people can live in it." name="sharing" checked={sharing} onChange={(e) => setSharing(e.target.checked)} />
                   </>
                 )}
               </>
@@ -480,7 +480,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             <p className="rounded-2xl bg-cream p-4 text-sm text-muted-foreground sm:col-span-2">
               {multiRoom
                 ? <>Occupancy: <strong className="text-foreground">{totalOcc}/{totalCap}</strong> {totalOcc >= totalCap ? "· no vacancy" : `· ${totalCap - totalOcc} available`}</>
-                : <>Rented as one whole flat · holds <strong className="text-foreground">{wholeCap}</strong> {wholeCap === 1 ? "person" : "people"}</>}
+                : <>Rented as one whole flat · {shared ? "any number of people can live here" : "one tenant"}</>}
             </p>
             {isPG && <PropertySummary isPG floorCount={floorCount} declaredRooms={0} rooms={rooms} cards={[]} beds={beds} baths={baths} plan={plan} />}
           </Section>

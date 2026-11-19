@@ -7,8 +7,8 @@ import { authFetch } from "@/lib/fetch-auth";
 
 export type CatSlot = { capacity: number; ac: boolean; rent: number; beds: number; occupied: number };
 export type FloorSlot = { floor: number; cats: CatSlot[] };
-// A flat rented as one whole unit: one rent, and it holds up to `capacity` people.
-export type WholeFlat = { rent: number; capacity: number; occupied: number; open: boolean };
+// A flat rented as one whole unit: one rent. A shared flat (`unlimited`) has no people limit, otherwise it holds one tenant.
+export type WholeFlat = { rent: number; capacity: number; occupied: number; open: boolean; unlimited?: boolean };
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 export const catName = (c: { capacity: number; ac: boolean }) => `${c.capacity}-seater${c.ac ? " AC" : ""}`;
 const MAX_FILES = 8;
@@ -31,7 +31,7 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
 
   const totalFree = isPg
     ? floors.reduce((s, f) => s + f.cats.reduce((a, c) => a + (c.beds - c.occupied), 0), 0)
-    : whole ? Math.max(0, whole.capacity - whole.occupied) : 0;
+    : whole ? (whole.unlimited ? 1 : Math.max(0, whole.capacity - whole.occupied)) : 0;
 
   const firstFloorWithSpace = floors.find((f) => f.cats.some((c) => c.occupied < c.beds))?.floor ?? floors[0]?.floor ?? 1;
   const [floor, setFloor] = useState(firstFloorWithSpace);
@@ -40,6 +40,7 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [residentUrl, setResidentUrl] = useState("");
+  const [sharedDone, setSharedDone] = useState(false); // added as a person sharing the flat: no link of their own
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -62,6 +63,7 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
     setOpen(false);
     setError("");
     setResidentUrl("");
+    setSharedDone(false);
     setCopied(false);
     setFiles([]);
     setCatKey("");
@@ -83,7 +85,7 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (isPg && !selCat) return setError("Select a room category first.");
-    if (!isPg && !whole?.open) return setError("This flat is already at maximum capacity.");
+    if (!isPg && !whole?.open) return setError("This flat is already rented.");
     setBusy(true);
     setError("");
 
@@ -100,7 +102,8 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
     const body = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) return setError(body.error ?? "Could not allocate this person.");
-    setResidentUrl(`${window.location.origin}${body.residentUrl}`);
+    if (body.housemate) setSharedDone(true);
+    else setResidentUrl(`${window.location.origin}${body.residentUrl}`);
     router.refresh();
   }
 
@@ -118,17 +121,19 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
           <button type="button" onClick={close} aria-label="Close"><X className="h-5 w-5" /></button>
         </div>
 
-        {residentUrl ? (
+        {residentUrl || sharedDone ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
             <div className="mx-auto max-w-lg space-y-4 rounded-3xl bg-primary/10 p-6 text-center">
               <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground"><Check className="h-6 w-6" /></span>
-              <p className="text-lg font-medium">Person allocated</p>
-              <p className="text-sm text-muted-foreground">Share this private link with the resident. They can see rent, bills and documents here.</p>
-              <a className="block break-all rounded-2xl bg-background px-4 py-3 text-sm text-primary underline" href={residentUrl} target="_blank" rel="noreferrer">{residentUrl}</a>
+              <p className="text-lg font-medium">{sharedDone ? "Person added" : "Person allocated"}</p>
+              <p className="text-sm text-muted-foreground">{sharedDone ? "This person shares the flat with its main tenant, so they use the main tenant's link. Rent and bills stay on the main tenant." : "Share this private link with the resident. They can see rent, bills and documents here."}</p>
+              {!sharedDone && <a className="block break-all rounded-2xl bg-background px-4 py-3 text-sm text-primary underline" href={residentUrl} target="_blank" rel="noreferrer">{residentUrl}</a>}
               <div className="flex justify-center gap-2">
-                <button type="button" onClick={() => { navigator.clipboard.writeText(residentUrl); setCopied(true); }} className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm text-primary-foreground hover:bg-ink">
-                  <Copy className="h-4 w-4" />{copied ? "Copied" : "Copy link"}
-                </button>
+                {!sharedDone && (
+                  <button type="button" onClick={() => { navigator.clipboard.writeText(residentUrl); setCopied(true); }} className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm text-primary-foreground hover:bg-ink">
+                    <Copy className="h-4 w-4" />{copied ? "Copied" : "Copy link"}
+                  </button>
+                )}
                 <button type="button" onClick={close} className="rounded-full bg-background px-5 py-2.5 text-sm ring-1 ring-cream hover:bg-cream">Done</button>
               </div>
             </div>
@@ -177,9 +182,9 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
                   <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-primary bg-primary/5 px-4 py-3">
                     <span>
                       <span className="block font-medium">Entire flat</span>
-                      <span className="block text-xs text-muted-foreground">{whole ? `${inr(whole.rent)} / month for the whole flat · holds ${whole.capacity} ${whole.capacity === 1 ? "person" : "people"}` : ""}</span>
+                      <span className="block text-xs text-muted-foreground">{whole ? `${inr(whole.rent)} / month for the whole flat${whole.unlimited ? " · shared, add as many people as live here" : ""}` : ""}</span>
                     </span>
-                    <span className="shrink-0 rounded-full bg-background px-3 py-1 text-xs">{whole?.open ? `${whole.occupied}/${whole.capacity} · ${whole.capacity - whole.occupied} free` : "Max occupancy"}</span>
+                    <span className="shrink-0 rounded-full bg-background px-3 py-1 text-xs">{whole?.open ? (whole.unlimited ? `${whole.occupied} living here` : "Vacant") : "Rented"}</span>
                   </div>
                 )}
               </section>

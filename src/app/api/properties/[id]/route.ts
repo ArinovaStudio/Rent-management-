@@ -88,10 +88,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     const existing = property.rooms.find((r) => r.id === input.id);
 
-    if (existing && parsed.data.type === "BUILDING" && input.roomType !== "SHAREABLE" && headcount(existing.allocations) > 1) {
+    const wholeFlat = parsed.data.type !== "PG" && parsed.data.type !== "BUILDING" && !parsed.data.sharing;
+    if (existing && (parsed.data.type === "BUILDING" || wholeFlat) && input.roomType !== "SHAREABLE" && headcount(existing.allocations) > 1) {
       return NextResponse.json({ error: `${existing.label} has ${headcount(existing.allocations)} residents, so it must stay shareable.` }, { status: 400 });
     }
-    if (existing && parsed.data.type !== "BUILDING" && input.capacity < headcount(existing.allocations)) {
+    if (existing && parsed.data.type !== "BUILDING" && !wholeFlat && input.capacity < headcount(existing.allocations)) {
       return NextResponse.json({
         error: `${existing.label} has ${headcount(existing.allocations)} active residents. Capacity cannot be reduced below that number.`,
       }, { status: 400 });

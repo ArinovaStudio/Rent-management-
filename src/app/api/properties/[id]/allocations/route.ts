@@ -53,7 +53,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Building: one person can take several flats at once. Every flat gets its own allocation.
   // A single flat must be vacant. A shareable flat has no people limit: the first person pays the flat's rent,
-  // everyone added later (or listed as a resident) is stored with their own details and rent covered (₹0).
+  // everyone added later (or listed as a resident) is a housemate: own details, rent covered (₹0), no link of their own.
   async function allocateBuilding() {
     let flatsIn: { roomId: string; residents: { fullName: string; phone: string; email: string }[] }[] = [];
     try { const v = JSON.parse(String(fd.get("flats") ?? "[]")); flatsIn = Array.isArray(v) ? v : []; } catch { /* handled below */ }
@@ -69,29 +69,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const created = await prisma.$transaction(async (tx) => {
         const rooms = await tx.room.findMany({
           where: { propertyId, id: { in: ids } },
-          include: { allocations: { where: { status: "ACTIVE" }, select: { monthlyRent: true } } },
+          include: { allocations: { where: { status: "ACTIVE" }, select: { isHousemate: true } } },
         });
         if (rooms.length !== ids.length) throw new Error("ROOM_NOT_FOUND");
-        const out: { id: string; accessToken: string; fullName: string; flat: string; tenant: boolean }[] = [];
+        const out: { id: string; accessToken: string; fullName: string; flat: string; primary: boolean; main: boolean }[] = [];
         for (const f of flatsIn) {
           const room = rooms.find((r) => r.id === f.roomId)!;
           const shareable = room.roomType === "SHAREABLE";
           if (!shareable && room.allocations.length > 0) throw new Error(`FLAT_TAKEN:${room.label}`);
           if (!shareable && f.residents.length > 0) throw new Error("NOT_SHAREABLE");
-          const hasPayer = room.allocations.some((a) => a.monthlyRent > 0);
+          // The first person in a flat is its main tenant (rent, bills, one link). Anyone added later shares that link.
+          const hasMain = room.allocations.some((a) => !a.isHousemate);
           const category = shareable ? "Shareable flat" : "Single flat";
           const base = { roomId: room.id, moveInDate, occupants: 1, roomCategory: category, floorNumber: room.floor };
           const tenant = await tx.allocation.create({
-            data: { ...base, fullName, phone, email: email || null, monthlyRent: hasPayer ? 0 : room.rent, securityDeposit: hasPayer ? 0 : securityDeposit, accessToken: randomBytes(32).toString("hex") },
+            data: { ...base, fullName, phone, email: email || null, monthlyRent: hasMain ? 0 : room.rent, securityDeposit: hasMain ? 0 : securityDeposit, isHousemate: hasMain, accessToken: randomBytes(32).toString("hex") },
             select: { id: true, accessToken: true, fullName: true },
           });
-          out.push({ ...tenant, flat: room.label, tenant: true });
+          out.push({ ...tenant, flat: room.label, primary: true, main: !hasMain });
           for (const r of f.residents) {
             const a = await tx.allocation.create({
-              data: { ...base, fullName: r.fullName, phone: r.phone, email: r.email || null, monthlyRent: 0, securityDeposit: 0, accessToken: randomBytes(32).toString("hex") },
+              data: { ...base, fullName: r.fullName, phone: r.phone, email: r.email || null, monthlyRent: 0, securityDeposit: 0, isHousemate: true, accessToken: randomBytes(32).toString("hex") },
               select: { id: true, accessToken: true, fullName: true },
             });
-            out.push({ ...a, flat: room.label, tenant: false });
+            out.push({ ...a, flat: room.label, primary: false, main: false });
           }
         }
         return { out };
@@ -99,12 +100,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
       // Documents belong to the person being allocated, once per flat
       if (files.length) {
-        for (const t of created.out.filter((a) => a.tenant)) {
+        for (const t of created.out.filter((a) => a.primary)) {
           const docs = await Promise.all(files.map(async (file) => ({ allocationId: t.id, name: file.name, path: await saveFile(file, `residents/${t.id}`, "doc") })));
           await prisma.residentDocument.createMany({ data: docs });
         }
       }
-      return NextResponse.json({ links: created.out.map((a) => ({ name: a.fullName, flat: a.flat, url: `/resident/${a.accessToken}` })) }, { status: 201 });
+      return NextResponse.json({ links: created.out.filter((a) => a.main).map((a) => ({ name: a.fullName, flat: a.flat, url: `/resident/${a.accessToken}` })) }, { status: 201 });
     } catch (error) {
       const msg = error instanceof Error ? error.message : "";
       if (msg.startsWith("FLAT_TAKEN:")) return fail(`${msg.slice(11)} is already rented. Refresh and pick another flat.`, 409);
@@ -122,6 +123,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       async (tx) => {
         let room;
         let rentToPay = 0;
+        let isHousemate = false;
         if (byCategory) {
           const candidates = await tx.room.findMany({
             where: { propertyId, capacity, ac, ...(isPg ? { floor } : {}) },
@@ -146,9 +148,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           });
           if (units.length === 0) throw new Error("ROOM_NOT_FOUND");
           room = units[0];
-          if (room._count.allocations >= room.capacity) throw new Error("ROOM_FULL");
-          const payers = await tx.allocation.count({ where: { roomId: room.id, status: "ACTIVE", monthlyRent: { gt: 0 } } });
-          rentToPay = payers === 0 ? room.rent : 0;
+          // A shared flat has no people limit; a flat for one tenant is full once rented.
+          const sharedFlat = room.roomType === "SHAREABLE" || room.capacity > 1;
+          if (!sharedFlat && room._count.allocations >= 1) throw new Error("ROOM_FULL");
+          // First person is the main tenant (rent, bills, one link). Anyone added later shares that link.
+          const mains = await tx.allocation.count({ where: { roomId: room.id, status: "ACTIVE", isHousemate: false } });
+          isHousemate = mains > 0;
+          rentToPay = isHousemate ? 0 : room.rent;
         }
 
         const category = isPg
@@ -166,12 +172,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             moveInDate,
             occupants: 1,
             monthlyRent: rentToPay, // always the rent set for this category (or the whole flat) while creating the property
-            securityDeposit,
+            securityDeposit: isHousemate ? 0 : securityDeposit,
+            isHousemate,
             roomCategory: category,
             floorNumber: roomFloor(property, room),
             accessToken,
           },
-          select: { id: true, accessToken: true, fullName: true },
+          select: { id: true, accessToken: true, fullName: true, isHousemate: true },
         });
       },
       { isolationLevel: "Serializable" }
@@ -186,12 +193,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
     if (documents.length) await prisma.residentDocument.createMany({ data: documents });
 
-    return NextResponse.json({ allocation, residentUrl: `/resident/${allocation.accessToken}` }, { status: 201 });
+    return NextResponse.json({ allocation, housemate: allocation.isHousemate, residentUrl: allocation.isHousemate ? null : `/resident/${allocation.accessToken}` }, { status: 201 });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "";
     if (msg === "CATEGORY_FULL") return fail("This category is full on that floor. Pick another category or floor.", 409);
     if (msg === "CATEGORY_NOT_FOUND") return fail("This category doesn't exist on that floor.");
-    if (msg === "ROOM_FULL") return fail("This flat is already at maximum capacity.", 409);
+    if (msg === "ROOM_FULL") return fail("This flat is already rented.", 409);
     if (msg === "ROOM_NOT_FOUND") return fail("This property has no unit to allocate.");
     if (msg === "TOO_MANY_PEOPLE") return fail("That is more people than this flat holds.");
     return fail("Allocation failed. Please refresh and try again.", 409);

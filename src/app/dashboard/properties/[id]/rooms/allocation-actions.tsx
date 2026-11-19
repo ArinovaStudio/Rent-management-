@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 
-export default function AllocationActions({ allocationId, residentUrl }: { allocationId: string; residentUrl: string }) {
+export default function AllocationActions({ allocationId, residentUrl, housemate = false }: { allocationId: string; residentUrl: string; housemate?: boolean }) {
   const router = useRouter();
 
   async function checkout() {
@@ -22,10 +22,12 @@ export default function AllocationActions({ allocationId, residentUrl }: { alloc
   const btn = "rounded-full bg-background px-4 py-2 text-sm hover:bg-background/70";
   return (
     <div className="flex flex-wrap gap-2">
-      <a className={btn} href={residentUrl} target="_blank" rel="noreferrer">Open link</a>
-      <button type="button" className={btn} onClick={() => navigator.clipboard.writeText(`${window.location.origin}${residentUrl}`)}>
-        Copy link
-      </button>
+      {!housemate && <a className={btn} href={residentUrl} target="_blank" rel="noreferrer">Open link</a>}
+      {!housemate && (
+        <button type="button" className={btn} onClick={() => navigator.clipboard.writeText(`${window.location.origin}${residentUrl}`)}>
+          Copy link
+        </button>
+      )}
       <button type="button" className={btn} onClick={checkout}>Check out</button>
     </div>
   );
