@@ -35,34 +35,37 @@ export default function IssueForm({ properties }: { properties: P[] }) {
     router.refresh();
   }
 
+  const lbl = "grid gap-1.5 text-sm";
   return (
-    <form onSubmit={submit} className="card">
-      <h2 style={{ marginTop: 0 }}>Report an issue</h2>
-      <label>
-        Property
-        <select value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
-          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-      </label>
-      <label>
-        Room (optional)
-        <select name="roomId" key={propertyId} defaultValue="">
-          <option value="">Whole property</option>
-          {rooms.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-        </select>
-      </label>
-      <label>Title<input name="title" required maxLength={150} /></label>
-      <label>Description<textarea name="description" rows={4} required maxLength={4000} /></label>
-      <label>
-        Priority
-        <select name="priority" defaultValue="MEDIUM">
-          <option value="LOW">Low</option>
-          <option value="MEDIUM">Medium</option>
-          <option value="HIGH">High</option>
-        </select>
-      </label>
-      {error && <p className="error" role="alert">{error}</p>}
-      <button disabled={busy}>{busy ? "Sending…" : "Send to owner"}</button>
+    <form onSubmit={submit} className="mb-6 min-w-0 space-y-4 rounded-[1.75rem] bg-background p-5 md:p-6">
+      <h2 className="text-lg font-semibold">Report an issue</h2>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className={lbl}>
+          <span className="font-medium">Property</span>
+          <select className="field" value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
+            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+        <label className={lbl}>
+          <span className="font-medium">Room (optional)</span>
+          <select className="field" name="roomId" key={propertyId} defaultValue="">
+            <option value="">Whole property</option>
+            {rooms.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+        </label>
+        <label className={lbl}><span className="font-medium">Title</span><input className="field" name="title" required maxLength={150} /></label>
+        <label className={lbl}>
+          <span className="font-medium">Priority</span>
+          <select className="field" name="priority" defaultValue="MEDIUM">
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+          </select>
+        </label>
+      </div>
+      <label className={lbl}><span className="font-medium">Description</span><textarea className="field" name="description" rows={4} required maxLength={4000} /></label>
+      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+      <button disabled={busy} className="rounded-full bg-primary px-6 py-2.5 text-sm text-primary-foreground hover:bg-ink disabled:opacity-60">{busy ? "Sending…" : "Send to owner"}</button>
     </form>
   );
 }

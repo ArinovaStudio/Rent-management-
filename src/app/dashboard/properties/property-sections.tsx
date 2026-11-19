@@ -79,7 +79,36 @@ export function PairList({ rows, onChange, aLabel, bLabel, addLabel, aOptions }:
 }
 
 // Click presets to select them, or add your own
-export function TagPicker({ presets, value, onChange, label }: { presets: string[]; value: string[]; onChange: (v: string[]) => void; label?: string }) {
+export function TagPicker({ presets, value, onChange, label, charges, onChargeChange }: {
+  presets: string[]; value: string[]; onChange: (v: string[]) => void; label?: string;
+  // Optional: a monthly charge box under each selected tag (blank = included)
+  charges?: Record<string, string>; onChargeChange?: (tag: string, v: string) => void;
+}) {
+  const charge = (v: string) => {
+    const charged = charges?.[v] !== undefined;
+    return (
+      <div className="flex flex-col gap-2 rounded-xl bg-background p-2">
+        <div className="flex items-center justify-between text-xs">
+          <span>Charged?</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => onChargeChange?.(v, "")}
+              className={`rounded-full px-3 py-1 ${charged ? "bg-cream" : "bg-primary text-white"}`}>No</button>
+            <button type="button" onClick={() => onChargeChange?.(v, "0")}
+              className={`rounded-full px-3 py-1 ${charged ? "bg-primary text-white" : "bg-cream"}`}>Yes</button>
+          </div>
+        </div>
+        {charged && (
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            ₹
+            <input type="number" min={0} step={1} placeholder="Charge / month"
+              value={charges?.[v] ?? ""}
+              onChange={(e) => onChargeChange?.(v, e.target.value)}
+              className="w-full min-w-0 bg-transparent text-sm text-foreground outline-none" />
+          </label>
+        )}
+      </div>
+    );
+  };
   const [custom, setCustom] = useState("");
   const customs = value.filter((v) => !presets.includes(v));
   const toggle = (v: string) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
@@ -101,17 +130,23 @@ export function TagPicker({ presets, value, onChange, label }: { presets: string
         {presets.map((v) => {
           const on = value.includes(v);
           return (
-            <button key={v} type="button" aria-pressed={on} onClick={() => toggle(v)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-left text-sm transition-colors ${on ? "border-primary bg-primary/5 font-medium text-primary" : "border-transparent bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-              <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${on ? "bg-primary text-primary-foreground" : "bg-cream"}`}>{on && <Check className="h-3 w-3" />}</span>
-              <span className="truncate">{v}</span>
-            </button>
+            <div key={v} className="grid content-start gap-1.5">
+              <button type="button" aria-pressed={on} onClick={() => toggle(v)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-left text-sm transition-colors ${on ? "border-primary bg-primary/5 font-medium text-primary" : "border-transparent bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${on ? "bg-primary text-primary-foreground" : "bg-cream"}`}>{on && <Check className="h-3 w-3" />}</span>
+                <span className="truncate">{v}</span>
+              </button>
+              {on && charge(v)}
+            </div>
           );
         })}
         {customs.map((v) => (
-          <span key={v} className="flex items-center gap-2 rounded-2xl border border-primary bg-primary/5 px-3 py-2.5 text-sm font-medium text-primary">
-            <span className="truncate">{v}</span>
-            <button type="button" aria-label={`Remove ${v}`} onClick={() => toggle(v)} className="ml-auto shrink-0"><X className="h-3.5 w-3.5" /></button>
-          </span>
+          <div key={v} className="grid content-start gap-1.5">
+            <span className="flex items-center gap-2 rounded-2xl border border-primary bg-primary/5 px-3 py-2.5 text-sm font-medium text-primary">
+              <span className="truncate">{v}</span>
+              <button type="button" aria-label={`Remove ${v}`} onClick={() => toggle(v)} className="ml-auto shrink-0"><X className="h-3.5 w-3.5" /></button>
+            </span>
+            {charge(v)}
+          </div>
         ))}
       </div>
       <div className="mt-3 flex gap-2">

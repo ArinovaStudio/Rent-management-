@@ -2,7 +2,7 @@
 import { type ReactNode, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, ClipboardCheck, Contact, Inbox, LayoutDashboard, LogOut, Mail, PanelLeft, ShieldCheck, Users } from "lucide-react";
+import { AlertCircle, Building2, ClipboardCheck, Contact, Inbox, LayoutDashboard, LogOut, Mail, PanelLeft, ShieldCheck, Users } from "lucide-react";
 import { propertiesBase } from "@/lib/routes";
 import QueuePopup from "./QueuePopup";
 
@@ -13,9 +13,11 @@ type Item = { title: string; url: string; icon: typeof Inbox; superOnly?: boolea
 
 // Items marked `soon` are Najm sections we copied for layout only; wire them up (or delete them) later.
 const NAV: Item[] = [
-  { title: "Dashboard", url: "/admin", icon: LayoutDashboard, superOnly: true },
+  { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
   { title: "Properties", url: "/dashboard/properties", icon: Building2 },
   { title: "Users", url: "/dashboard/users", icon: Users, hideFor: "PROPERTY_MANAGER" },
+  { title: "My requests", url: "/dashboard/requests", icon: Inbox, hideFor: "SUPER_ADMIN" },
+  { title: "Issues", url: "/dashboard/issues", icon: AlertCircle },
   { title: "Property approvals", url: "/admin/approvals", icon: ClipboardCheck, superOnly: true },
   { title: "KYC reviews", url: "/admin/kyc", icon: ShieldCheck, superOnly: true },
   { title: "Enquiries", url: "#", icon: Inbox, soon: true },
@@ -28,7 +30,7 @@ export function AdminShell({ role, name, children }: { role: string; name?: stri
   const [collapsed, setCollapsed] = useState(false);
   const [open, setOpen] = useState(false);
   const isSuper = role === "SUPER_ADMIN";
-  const items = NAV.filter((n) => (!n.superOnly || isSuper) && n.hideFor !== role).map((n) => (n.title === "Properties" ? { ...n, url: propertiesBase(role) } : n));  // Most specific match wins, so /dashboard/admin/kyc doesn't also light up "Dashboard".
+  const items = NAV.filter((n) => (!n.superOnly || isSuper) && n.hideFor !== role).map((n) => (n.title === "Properties" ? { ...n, url: propertiesBase(role) } : n.title === "Dashboard" ? { ...n, url: isSuper ? "/admin" : "/dashboard" } : n));  // Most specific match wins, so /dashboard/admin/kyc doesn't also light up "Dashboard".
   const active = items.filter((n) => !n.soon && (path === n.url || path.startsWith(`${n.url}/`))).sort((a, b) => b.url.length - a.url.length)[0]?.url;
   const label = collapsed ? "lg:hidden" : "";
 
@@ -38,7 +40,7 @@ export function AdminShell({ role, name, children }: { role: string; name?: stri
 
       <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-background transition-all lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"} ${collapsed ? "lg:w-[4.5rem]" : ""}`}>
         <div className="px-3 py-5">
-          <Link href={isSuper ? "/admin" : "/dashboard/properties"} className="flex items-center gap-2 text-xl font-medium tracking-tight">
+          <Link href={isSuper ? "/admin" : "/dashboard"} className="flex items-center gap-2 text-xl font-medium tracking-tight">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">R</span>
             <span className={label}>Rental <span className="text-muted-foreground">{isSuper ? "Admin" : "Portal"}</span></span>
           </Link>
@@ -73,10 +75,12 @@ export function AdminShell({ role, name, children }: { role: string; name?: stri
               <p className="text-sm text-muted-foreground">{role.replace(/_/g, " ").toLowerCase()}</p>
             </div>
           )}
-          <a href={SIGN_OUT_URL} title="Sign out" className="flex h-10 items-center gap-3 rounded-full px-3 hover:bg-cream">
-            <LogOut className="h-5 w-5 shrink-0" />
-            <span className={label}>Sign out</span>
-          </a>
+          <form action={SIGN_OUT_URL} method="post">
+            <button type="submit" title="Sign out" className="flex h-10 w-full items-center gap-3 rounded-full px-3 hover:bg-cream">
+              <LogOut className="h-5 w-5 shrink-0" />
+              <span className={label}>Sign out</span>
+            </button>
+          </form>
         </div>
       </aside>
 

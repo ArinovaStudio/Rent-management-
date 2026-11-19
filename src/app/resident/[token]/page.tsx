@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Building2, CalendarDays, FileText, Home, Mail, MapPin, Phone, ShieldCheck, Wallet } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
+import { amenityCharges } from "@/lib/amenity-charges";
 import { BILL_LABEL, billDueDate, fmtDate, inr, monthLabel, nextRentDue } from "@/lib/bills";
 
 const card = "rounded-[1.75rem] bg-background p-5 md:p-6";
@@ -38,6 +39,7 @@ export default async function ResidentPage({ params }: { params: Promise<{ token
   const category = resident.roomCategory ?? roomCategoryLabel(property, resident.room);
   const floor = resident.floorNumber ?? roomFloor(property, resident.room);
   const active = resident.status === "ACTIVE";
+  const amenity = resident.monthlyRent > 0 ? amenityCharges(property) : { list: [], total: 0 };
   const initials = resident.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
 
   return (
@@ -69,22 +71,36 @@ export default async function ResidentPage({ params }: { params: Promise<{ token
             <Info icon={Phone} label="Phone" value={resident.phone} />
             {resident.email && <Info icon={Mail} label="Email" value={resident.email} />}
             <Info icon={CalendarDays} label="Move-in date" value={resident.moveInDate.toLocaleDateString("en-IN")} />
-            <Info icon={ShieldCheck} label="Security deposit" value={inr(resident.securityDeposit)} />
           </div>
         </section>
 
-        {/* Rent */}
+        {/* Rent, amenities and deposit */}
         <section className={card}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary"><Wallet className="h-5 w-5" /></span>
               <div>
-                <h2 className="text-lg font-semibold">Monthly rent</h2>
+                <h2 className="text-lg font-semibold">Rent & charges</h2>
                 <p className="text-sm text-muted-foreground">Next due {fmtDate(nextRentDue(resident.moveInDate))}</p>
               </div>
             </div>
-            <p className="text-2xl font-medium">{inr(resident.monthlyRent)}</p>
+            <p className="text-2xl font-medium">{inr(resident.monthlyRent + amenity.total)} <span className="text-sm font-normal text-muted-foreground">/ month</span></p>
           </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <Info icon={Wallet} label="Rent" value={inr(resident.monthlyRent)} />
+            <Info icon={Building2} label="Amenities charge" value={amenity.total > 0 ? `${inr(amenity.total)} / month` : "Included"} />
+            <Info icon={ShieldCheck} label="Security deposit (one-time)" value={inr(resident.securityDeposit)} />
+          </div>
+          {amenity.list.length > 0 && (
+            <details className="mt-3 rounded-2xl bg-cream/60 px-4 py-3">
+              <summary className="cursor-pointer text-sm font-medium">Amenity charges ({amenity.list.length})</summary>
+              <ul className="mt-3 space-y-1 text-sm">
+                {amenity.list.map((x) => (
+                  <li key={x.name} className="flex justify-between gap-3"><span>{x.name}</span><span>{inr(x.charge)}</span></li>
+                ))}
+              </ul>
+            </details>
+          )}
           <div className="mt-4"><a className={primaryBtn} href={`/resident/${token}/rent`}>Pay rent</a></div>
         </section>
 

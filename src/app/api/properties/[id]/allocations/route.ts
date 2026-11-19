@@ -16,6 +16,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const property = await prisma.property.findUnique({ where: { id: propertyId } });
   if (!property || !(await canOperateProperty(me, property))) return fail("You can't manage this property.", 403);
 
+  if (!property.isActive) return fail("This property is marked inactive (for example under construction). Mark it active before allocating residents.");
+
   const fd = await req.formData().catch(() => null);
   if (!fd) return fail("Invalid form data.");
 
@@ -56,7 +58,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // everyone added later (or listed as a resident) is a housemate: own details, rent covered (₹0), no link of their own.
   async function allocateBuilding() {
     let flatsIn: { roomId: string; residents: { fullName: string; phone: string; email: string }[] }[] = [];
-    try { const v = JSON.parse(String(fd.get("flats") ?? "[]")); flatsIn = Array.isArray(v) ? v : []; } catch { /* handled below */ }
+    try { const v = JSON.parse(String(fd?.get("flats") ?? "[]")); flatsIn = Array.isArray(v) ? v : []; } catch { /* handled below */ }
     if (flatsIn.length === 0 || flatsIn.length > 50) return fail("Select at least one flat.");
     const ids = flatsIn.map((f) => String(f.roomId));
     if (new Set(ids).size !== ids.length) return fail("A flat was selected twice.");
@@ -68,7 +70,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     try {
       const created = await prisma.$transaction(async (tx) => {
         const rooms = await tx.room.findMany({
-          where: { propertyId, id: { in: ids } },
+          where: { propertyId, id: { in: ids }, isActive: true },
           include: { allocations: { where: { status: "ACTIVE" }, select: { isHousemate: true } } },
         });
         if (rooms.length !== ids.length) throw new Error("ROOM_NOT_FOUND");
@@ -126,7 +128,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         let isHousemate = false;
         if (byCategory) {
           const candidates = await tx.room.findMany({
-            where: { propertyId, capacity, ac, ...(isPg ? { floor } : {}) },
+            where: { propertyId, isActive: true, capacity, ac, ...(isPg ? { floor } : {}) },
             include: { _count: { select: { allocations: { where: { status: "ACTIVE" } } } } },
             orderBy: { createdAt: "asc" },
           });
@@ -142,7 +144,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           // Whole flat: one unit holding up to `capacity` people. Every person is stored with their own details.
           // The first person is the tenant who pays the rent; later people are housemates (rent covered, ₹0).
           const units = await tx.room.findMany({
-            where: { propertyId },
+            where: { propertyId, isActive: true },
             include: { _count: { select: { allocations: { where: { status: "ACTIVE" } } } } },
             orderBy: { createdAt: "asc" },
           });

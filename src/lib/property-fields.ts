@@ -128,9 +128,34 @@ function run(fd: FormData, role: Role) {
   put("roomLayout", rows("roomLayout", "room", 30, "type", "size", 10_000));
   // PG bathrooms are just "Attached"/"Common" per room category, so the size is optional there.
   put("bathroomLayout", rows("bathroomLayout", "bathroom", 30, "type", "size", 10_000, str("type") === "PG"));
-  put("amenities", tags("amenities", "amenity"));
+  const amenityList = tags("amenities", "amenity");
+  put("amenities", amenityList);
+  // Monthly charge per amenity: blank / 0 = included in the rent. Only chosen amenities are kept.
+  let rawCharges: Record<string, unknown> = {};
+  try { const v = JSON.parse(str("amenityCharges") || "{}"); if (v && typeof v === "object" && !Array.isArray(v)) rawCharges = v; } catch { bad("Invalid form data."); }
+  const charges: Record<string, number> = {};
+  for (const a of amenityList) {
+    const v = rawCharges[a];
+    if (v === "" || v == null) continue;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0 || n > 1_000_000) bad(`${a}: enter a monthly charge between 0 and 1,000,000.`);
+    if (n > 0) charges[a] = n;
+  }
+  put("amenityCharges", charges);
   put("features", tags("features", "feature"));
   put("nearbyPlaces", rows("nearbyPlaces", "nearby place", 20, "name", "distanceKm", 500));
+
+  // Google Maps link (people often paste one instead of picking a pin)
+  const mapUrl = text("mapUrl", "Map link", 500);
+  if (mapUrl) {
+    let ok = false;
+    try {
+      const u = new URL(mapUrl);
+      ok = (u.protocol === "https:" || u.protocol === "http:") && /(^|\.)(google\.[a-z.]+|goo\.gl)$/i.test(u.hostname);
+    } catch { /* invalid */ }
+    if (!ok) bad("Enter a valid Google Maps link.");
+  }
+  put("mapUrl", mapUrl);
 
   // 10. Visibility
   put("isPublished", fd.get("isPublished") === "on");
@@ -153,7 +178,7 @@ export function listingForClient(p: Property, role: Role) {
     titleDeedNumber: p.titleDeedNumber ?? "",
     handoverDate: p.handoverDate ? p.handoverDate.toISOString().slice(0, 10) : "",
     roomLayout: p.roomLayout, bathroomLayout: p.bathroomLayout,
-    amenities: p.amenities, features: p.features,  nearbyPlaces: p.nearbyPlaces,
+    amenities: p.amenities, amenityCharges: p.amenityCharges, mapUrl: p.mapUrl ?? "", features: p.features,  nearbyPlaces: p.nearbyPlaces,
     isPublished: p.isPublished, featured: p.featured,
   };
   return Object.fromEntries(Object.entries(all).filter(([k]) => canReadField(role, k))) as Partial<typeof all>;

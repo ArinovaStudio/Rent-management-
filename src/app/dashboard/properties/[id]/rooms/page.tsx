@@ -13,7 +13,8 @@ import { splitMain } from "@/lib/main-tenant";
 import BuildingResidentsTable, { type BuildingResidentRow } from "./building-residents-table";
 import AllocationActions from "./allocation-actions";
 import RoomOccupants, { type OccupantFloor } from "./room-occupants";
-import ResidentBills from "./resident-bills";
+import AvailabilityManager from "./availability-manager";
+import GenerateBill, { type BillRoom } from "./generate-bill";
 import { roomFloor } from "@/lib/room-category";
 import { headcount, occupancy } from "@/lib/occupancy";
 
@@ -49,7 +50,9 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
   // PG and flats rented room by room are handled by room category. A flat rented as a whole has no room-wise view.
   const isBuilding = property.type === "BUILDING";
   const byCategory = (isPg || property.sharing) && !isBuilding;
-  const { cap: capacity, occ: occupied, full, unlimited } = occupancy(property, property.rooms);
+  // Inactive rooms / flats (e.g. under construction) don't count as capacity and can't be allocated
+  const liveRooms = property.rooms.filter((r) => r.isActive);
+  const { cap: capacity, occ: occupied, full, unlimited } = occupancy(property, liveRooms);
   const available = Math.max(0, capacity - occupied);
   const name = (me as unknown as { name?: string }).name ?? "Account";
 
@@ -57,7 +60,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
   const floorNos = [...new Set(property.rooms.map((r) => r.floor ?? 0))].sort((a, b) => a - b);
   const floors: FloorSlot[] = floorNos.map((fl) => {
     const map = new Map<string, FloorSlot["cats"][number]>();
-    for (const r of property.rooms.filter((x) => (x.floor ?? 0) === fl)) {
+    for (const r of liveRooms.filter((x) => (x.floor ?? 0) === fl)) {
       const key = `${r.capacity}-${r.ac}`;
       const cur = map.get(key) ?? { capacity: r.capacity, ac: r.ac, rent: r.rent, beds: 0, occupied: 0 };
       cur.beds += r.capacity;
@@ -84,12 +87,12 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
   // ---- Building: every flat on its own, grouped by floor ----
   const buildingFloors: BuildingFloor[] = floorNos.map((fl) => ({
     floor: fl,
-    flats: property.rooms.filter((r) => (r.floor ?? 0) === fl).map((r) => ({
+    flats: liveRooms.filter((r) => (r.floor ?? 0) === fl).map((r) => ({
       id: r.id, label: r.label, shareable: r.roomType === "SHAREABLE", rent: r.rent, living: r.allocations.length, bhk: r.bedrooms,
     })),
   }));
-  const flatCount = property.rooms.length;
-  const vacantFlats = property.rooms.filter((r) => r.allocations.length === 0).length;
+  const flatCount = liveRooms.length;
+  const vacantFlats = liveRooms.filter((r) => r.allocations.length === 0).length;
 
   // ---- Building residents: grouped floor -> flat. A shareable flat shows its main tenant; friends sit behind a button. ----
   const byFlat = (x: { label: string }, y: { label: string }) => x.label.localeCompare(y.label, undefined, { numeric: true });
@@ -111,7 +114,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
 
   // ---- Whole flat ----
   const unit = property.rooms[0];
-  const whole = { rent: unit?.rent ?? 0, capacity: unit?.capacity ?? 1, occupied, open: !!unit && !full, unlimited };
+  const whole = { rent: unit?.rent ?? 0, capacity: unit?.capacity ?? 1, occupied, open: !!unit && unit.isActive && !full, unlimited };
 
   // ---- Residents (grouped by floor in a PG, otherwise one group) ----
   // A flat rented as a whole (Apartment/Flat, not rent-by-room) works like a Building flat: show its main tenant,
@@ -128,6 +131,16 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
     ? floorNos.map((fl) => ({ title: `Floor ${fl}`, list: residents.filter((x) => (x.room.floor ?? 0) === fl) })).filter((g) => g.list.length > 0)
     : residents.length ? [{ title: "Current residents", list: residents }] : [];
 
+  // ---- Rooms that can get a bill (bill goes to the person whose link the resident uses) ----
+  const billRooms: BillRoom[] = property.rooms.filter((r) => r.allocations.length > 0).map((r) => {
+    const list = isBuilding || wholeFlat ? [splitMain(r.allocations).main].filter((x): x is NonNullable<typeof x> => !!x) : r.allocations;
+    return {
+      id: r.id, label: r.label, floor: r.floor ?? null,
+      category: isBuilding || wholeFlat ? (r.roomType === "SHAREABLE" ? "Shareable flat" : "Flat") : catName(r),
+      people: list.map((a) => ({ id: a.id, name: a.fullName, phone: a.phone, email: a.email, rent: a.monthlyRent, moveIn: a.moveInDate.toLocaleDateString("en-IN") })),
+    };
+  });
+
   return (
     <AdminShell role={me.role} name={name}>
       <div className="mb-8 flex flex-wrap items-center gap-4">
@@ -141,10 +154,23 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
           {isBuilding
             ? <BuildingAllocationForm propertyId={property.id} floors={buildingFloors} />
             : <AllocationForm propertyId={property.id} mode={byCategory ? "category" : "whole"} showFloors={isPg} floors={floors} whole={whole} />}
+          <AvailabilityManager
+            propertyId={property.id}
+            propertyActive={property.isActive}
+            propertyNote={property.inactiveNote}
+            roomWord={isBuilding ? "flat" : byCategory ? "room" : null}
+            rooms={property.rooms.map((r) => ({ id: r.id, label: r.label, floor: r.floor ?? null, active: r.isActive, note: r.inactiveNote, living: r.allocations.length }))}
+          />
+          <GenerateBill rooms={billRooms} />
         </div>
       </div>
 
       <div className="space-y-6">
+        {!property.isActive && (
+          <p className="rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">
+            This property is inactive{property.inactiveNote ? ` (${property.inactiveNote})` : ""}. New allocations are blocked until you mark it active.
+          </p>
+        )}
         {/* Summary */}
         <div className="grid gap-4 sm:grid-cols-3">
           {isBuilding ? (
@@ -241,7 +267,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                 <Panel key={fl}>
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-lg font-semibold">Floor {fl}</h2>
-                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs text-primary">{list.filter((r) => r.allocations.length === 0).length} vacant</span>
+                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs text-primary">{list.filter((r) => r.isActive && r.allocations.length === 0).length} vacant</span>
                   </div>
                   <ul className="mt-4 space-y-2">
                     {list.map((r) => {
@@ -253,7 +279,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                             <span className="block font-medium">{r.label}</span>
                             <span className="block truncate text-xs text-muted-foreground">{r.bedrooms ? `${r.bedrooms} BHK · ` : ""}{r.roomType === "SHAREABLE" ? "Shareable" : "Single"} · {inr(r.rent)} / month{tenant ? ` · ${tenant.fullName}` : ""}</span>
                           </span>
-                          <span className={`shrink-0 rounded-full px-3 py-1 text-xs ${people === 0 ? "bg-background" : "bg-primary/10 text-primary"}`}>{people === 0 ? "Vacant" : r.roomType === "SHAREABLE" ? `${people} ${people === 1 ? "person" : "people"}` : "Rented"}</span>
+                          <span className={`shrink-0 rounded-full px-3 py-1 text-xs ${!r.isActive ? "bg-destructive/10 text-destructive" : people === 0 ? "bg-background" : "bg-primary/10 text-primary"}`}>{!r.isActive ? "Inactive" : people === 0 ? "Vacant" : r.roomType === "SHAREABLE" ? `${people} ${people === 1 ? "person" : "people"}` : "Rented"}</span>
                         </li>
                       );
                     })}
@@ -318,10 +344,6 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                                 <p className="text-muted-foreground">{main.phone}{main.email ? ` · ${main.email}` : ""}</p>
                                 <p className="text-muted-foreground">{main.roomCategory} · Floor {main.floorNumber ?? room.floor} · {inr(main.monthlyRent)}/month</p>
                                 <p className="text-muted-foreground">Move-in {main.moveInDate.toLocaleDateString("en-IN")} · {main._count.documents} document(s)</p>
-                                <ResidentBills
-                                  allocationId={main.id}
-                                  bills={main.bills.map((b) => ({ id: b.id, type: b.type, period: b.period, amount: b.amount, note: b.note, paid: b.paid }))}
-                                />
                               </div>
                               <div className="flex flex-col items-end gap-2">
                                 <AllocationActions allocationId={main.id} residentUrl={`/resident/${main.accessToken}`} />
@@ -378,10 +400,6 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                                 : <>Entire flat · Main tenant · {inr(a.monthlyRent)}/month</>}
                             </p>
                             <p className="text-muted-foreground">Move-in {a.moveInDate.toLocaleDateString("en-IN")} · {a._count.documents} document(s)</p>
-                            <ResidentBills
-                              allocationId={a.id}
-                              bills={a.bills.map((b) => ({ id: b.id, type: b.type, period: b.period, amount: b.amount, note: b.note, paid: b.paid }))}
-                            />
                           </div>
                           <div className="flex flex-col items-end gap-2">
                             <AllocationActions allocationId={a.id} residentUrl={`/resident/${a.accessToken}`} />

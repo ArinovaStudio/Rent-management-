@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Bath as BathIcon, BedDouble, ChevronLeft, ChevronRight, FileText, ImagePlus, MapPin, Maximize, Plus, Star, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
-import MapPicker from "./map-picker";
+import MapPicker, { MAP_UPDATE_EVENT } from "./map-picker";
 import NearbyPlaces from "./nearby-places";
 import { F, FileDrop, Section, SavingOverlay, TagPicker, ToggleRow, toPairs, type Pair } from "./property-sections";
 import {
@@ -129,6 +129,9 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const [mapFocus, setMapFocus] = useState<string | null>(null);
   const [amenities, setAmenities] = useState<string[]>(L?.amenities ?? []);
   const [features, setFeatures] = useState<string[]>(L?.features ?? []);
+  const [charges, setCharges] = useState<Record<string, string>>(() =>
+    Object.fromEntries(Object.entries((L?.amenityCharges ?? {}) as unknown as Record<string, number>).map(([k, v]) => [k, String(v)])));
+  const [mapUrl, setMapUrl] = useState(L?.mapUrl ?? "");
   const [nearby, setNearby] = useState<Pair[]>(toPairs(L?.nearbyPlaces, "name", "distanceKm"));
   const [gallery, setGallery] = useState<GalleryItem[]>(
     (initial?.images ?? []).map((i) => ({ key: i.id, id: i.id, src: `/api/uploads/${i.path}` }))
@@ -218,6 +221,14 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const totalCap = multiRoom ? rooms.reduce((s, r) => s + Number(r.capacity || 0), 0) : wholeCap;
   const totalOcc = multiRoom ? rooms.reduce((s, r) => s + Number(r.occupied || 0), 0) : singleOcc;
 
+  // Pasted Google Maps link: pick the coordinates out of it when it has them (short links are saved as they are)
+  function onMapLink(v: string) {
+    setMapUrl(v);
+    const num = "(-?\\d+(?:\\.\\d+)?)";
+    const m = v.match(new RegExp(`@${num},${num}`)) ?? v.match(new RegExp(`!3d${num}!4d${num}`)) ?? v.match(new RegExp(`[?&](?:q|ll|query|destination)=${num}(?:,|%2C)${num}`));
+    if (m && Math.abs(Number(m[1])) <= 90 && Math.abs(Number(m[2])) <= 180) { setLat(m[1]); setLng(m[2]); }
+  }
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -297,6 +308,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     }
     fd.set("nearbyPlaces", asRows(nearby, "name", "distanceKm"));
     fd.set("amenities", JSON.stringify(amenities));
+    fd.set("amenityCharges", JSON.stringify(charges));
     fd.set("features", JSON.stringify(features));
     fd.set("removeDocIds", JSON.stringify(removeDocs));
 
@@ -313,8 +325,17 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     }
   }
 
+  // Enter in a text field must not submit the whole form. In the Location section it updates the map instead.
+  function onEnterKey(e: React.KeyboardEvent<HTMLFormElement>) {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    const t = e.target as HTMLElement;
+    if (!(t instanceof HTMLInputElement) || ["button", "submit", "reset", "checkbox", "radio", "file"].includes(t.type)) return;
+    e.preventDefault();
+    if (t.closest("#location")) window.dispatchEvent(new Event(MAP_UPDATE_EVENT));
+  }
+
   return (
-    <form onSubmit={onSubmit} className="tw block">
+    <form onSubmit={onSubmit} onKeyDown={onEnterKey} className="tw block">
       {busy && <SavingOverlay label={editing ? "Saving changes…" : "Creating property…"} />}
 
       {modal === "floors" && <FloorGeneratorModal floorCount={floorCount} plan={plan} baseRooms={initialRooms} onSave={saveFloors} onClose={() => setModal(null)} />}
@@ -502,8 +523,8 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             {!multiRoom && <F label="Rent per m²"><div className="field text-muted-foreground">{perSqm != null ? inr(perSqm) : "Calculated automatically"}</div></F>}
           </Section>
 
-          <Section id="amenities" title="Amenities" hint="Tap to select what applies, or add your own.">
-            <TagPicker label="Amenities" presets={AMENITY_PRESETS} value={amenities} onChange={setAmenities} />
+          <Section id="amenities" title="Amenities" hint="Tap to select what applies, or add your own. Add a monthly charge under an amenity, or leave it blank if it is included in the rent.">
+            <TagPicker label="Amenities" presets={AMENITY_PRESETS} value={amenities} onChange={setAmenities} charges={charges} onChargeChange={(k, v) => setCharges((c) => ({ ...c, [k]: v }))} />
             <TagPicker label="Features & finishes" presets={FEATURE_PRESETS} value={features} onChange={setFeatures} />
           </Section>
 
@@ -512,6 +533,10 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             <F label="City"><input className="field" name="city" required value={city} onChange={(e) => setCity(e.target.value)} placeholder="Enter city" /></F>
             <F label="District"><input className="field" name="district" maxLength={80} defaultValue={L?.district ?? ""} placeholder="Enter district" /></F>
             <F label="State"><input className="field" name="state" maxLength={80} defaultValue={L?.state ?? ""} placeholder="Enter state" /></F>
+            <F label="Google Maps link (optional)" wide>
+              <input className="field" name="mapUrl" type="url" maxLength={500} placeholder="https://maps.app.goo.gl/…" value={mapUrl} onChange={(e) => onMapLink(e.target.value)} />
+              <span className="text-xs text-muted-foreground">Paste a link from Google Maps. The pin moves to it when the link has coordinates.</span>
+            </F>
             <MapPicker address={address} city={city} lat={lat} lng={lng} onChange={(a, b) => { setLat(a); setLng(b); }} focus={mapFocus} onClearFocus={() => setMapFocus(null)} />
             <div className="border-t border-cream pt-4 sm:col-span-2">
               <p className="font-medium">Nearby places</p>

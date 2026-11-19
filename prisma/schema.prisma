@@ -260,6 +260,12 @@ model Property {
   nearbyPlaces        Json      @default("[]")
   isPublished         Boolean   @default(true)
   featured            Boolean   @default(false)
+  // Google Maps link as pasted by the owner, monthly charge per amenity (name -> rupees; missing = included),
+  // and whether the property is open for new residents (false = e.g. under construction)
+  mapUrl              String?
+  amenityCharges      Json      @default("{}")
+  isActive            Boolean   @default(true)
+  inactiveNote        String?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   managers PropertyManager[]
@@ -289,6 +295,8 @@ model Room {
   bathrooms        Int? // Building flats: bathroom count
   furnishing       String? // Building flats: UNFURNISHED | SEMI_FURNISHED | FURNISHED
   images           Json     @default("[]")
+  isActive         Boolean  @default(true) // false = not open for new residents (e.g. under construction)
+  inactiveNote     String?
   createdAt  DateTime @default(now())
   allocations Allocation[]
   issues Issue[]
