@@ -10,6 +10,7 @@ import { propertiesBase } from "@/lib/routes";
 import { amenityCharges } from "@/lib/amenity-charges";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip, toneFor } from "@/app/admin/ui";
+import RaiseIssue from "../issues/raise-issue";
 
 const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment", BUILDING: "Building" } as const;
 const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
@@ -31,7 +32,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
         include: {
           allocations: {
             where: { status: "ACTIVE" },
-            select: { id: true, occupants: true },
+            select: { id: true, occupants: true, fullName: true },
           },
         },
       },
@@ -113,6 +114,12 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
 
                 <div className="mt-5 flex flex-wrap gap-2">
                   {p.mapUrl && <a className={pill} href={p.mapUrl} target="_blank" rel="noreferrer">View on map</a>}
+                  {isManager && (
+                    <RaiseIssue
+                      propertyId={p.id}
+                      properties={[{ id: p.id, name: p.name, rooms: p.rooms.map((r) => ({ id: r.id, label: r.label, floor: r.floor ?? null, residents: r.allocations.map((a) => ({ id: a.id, name: a.fullName })) })) }]}
+                    />
+                  )}
                   {!isManager && !isCoOwner && <Link className={pill} href={`${base}/${p.id}/edit`}>Edit</Link>}
                   {!isManager && !isCoOwner && <Link className={pill} href={`${base}/${p.id}/managers`}>Managers</Link>}
                   {isCoOwner

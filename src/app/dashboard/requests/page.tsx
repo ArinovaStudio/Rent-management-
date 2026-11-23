@@ -105,13 +105,13 @@ export default async function RequestsPage() {
                   <li key={i.id} className="rounded-2xl bg-cream/60 p-4 text-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate font-medium">{i.title}</p>
+                        <p className="truncate font-medium"><Link href={`/dashboard/issues/${i.id}`} className="hover:underline">#{i.ticketNo} · {i.title}</Link></p>
                         <p className="text-xs text-muted-foreground">{i.property.name}{i.room ? ` · ${i.room.label}` : ""} · Sent {fmt(i.createdAt)}</p>
                       </div>
                       <Chip tone={i.status === "RESOLVED" || i.status === "CLOSED" ? "good" : "neutral"}>{i.status.replace("_", " ").toLowerCase()}</Chip>
                     </div>
                     {i.resolutionNote
-                      ? <p className="mt-3 rounded-2xl bg-background px-4 py-3">Reply from owner: {i.resolutionNote}</p>
+                      ? <p className="mt-3 rounded-2xl bg-background px-4 py-3">Latest reply: {i.resolutionNote}</p>
                       : <p className="mt-3 text-xs text-muted-foreground">No reply yet.</p>}
                   </li>
                 ))}

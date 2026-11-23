@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { getVerificationStatus } from "@/lib/owner-status";
 
-const RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 } as const;
+const RANK = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 } as const;
 const OPEN: IssueStatus[] = ["OPEN", "IN_PROGRESS"];
 const OWNER_REVIEW: ReviewStatus[] = ["PENDING", "NEEDS_MORE_INFO", "REJECTED"];
 

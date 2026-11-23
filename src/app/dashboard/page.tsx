@@ -150,13 +150,13 @@ export default async function Dashboard() {
             ) : (
               <ul className="space-y-2">
                 {openIssues.map((i) => (
-                  <li key={i.id} className="rounded-2xl bg-cream/60 px-4 py-3 text-sm">
+                  <li key={i.id}><Link href={`/dashboard/issues/${i.id}`} className="block rounded-2xl bg-cream/60 px-4 py-3 text-sm hover:bg-cream">
                     <div className="flex items-center justify-between gap-3">
                       <span className="truncate font-medium">{i.title}</span>
-                      <Chip tone={i.priority === "HIGH" ? "bad" : "neutral"}>{i.priority.toLowerCase()}</Chip>
+                      <Chip tone={i.priority === "HIGH" || i.priority === "URGENT" ? "bad" : "neutral"}>{i.priority.toLowerCase()}</Chip>
                     </div>
                     <p className="truncate text-xs text-muted-foreground">{i.property.name}{i.room ? ` · ${i.room.label}` : ""} · {i.createdAt.toLocaleDateString("en-IN")}</p>
-                  </li>
+                  </Link></li>
                 ))}
               </ul>
             )}

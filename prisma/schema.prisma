@@ -86,6 +86,19 @@ enum IssuePriority {
   LOW
   MEDIUM
   HIGH
+  URGENT
+}
+
+enum IssueCategory {
+  MAINTENANCE
+  PLUMBING
+  ELECTRICAL
+  CLEANING
+  SECURITY
+  RESIDENT_COMPLAINT
+  BILLING
+  SAFETY
+  OTHER
 }
 
 
@@ -109,6 +122,7 @@ model User {
   assignedPropertyCoOwners PropertyCoOwner[] @relation("PropertyCoOwnerAssigner")
   managedProperties PropertyManager[] @relation("ManagedProperties")
   reportedIssues    Issue[]           @relation("ReportedIssues")
+  issueReplies      IssueReply[]
   // Null for accounts created before owner onboarding existed, for Super Admins and for managers.
   ownerProfile  OwnerProfile?
 }
@@ -354,6 +368,7 @@ model Allocation {
   moveInDate      DateTime
   monthlyRent     Int
   securityDeposit Int              @default(0)
+  issues          Issue[]
   occupants       Int              @default(1) // people living under this allocation (a whole flat can have several)
   isHousemate     Boolean          @default(false) // Building: shares a flat with its main tenant; no link of their own, rent and bills sit on the main tenant
 
@@ -504,11 +519,35 @@ model Issue {
   status         IssueStatus   @default(OPEN)
   resolutionNote String?
   resolvedAt     DateTime?
+  // Ticket details. A manager raises it; it goes to the property's owner (Property Admin) and
+  // can be escalated to the Super Admin (escalatedAt set). Tickets on a Super Admin's own property start escalated.
+  ticketNo       Int           @unique @default(autoincrement())
+  category       IssueCategory @default(OTHER)
+  allocationId   String?
+  allocation     Allocation?   @relation(fields: [allocationId], references: [id], onDelete: SetNull)
+  neededBy       DateTime?
+  images         Json          @default("[]")
+  escalatedAt    DateTime?
+  replies        IssueReply[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   @@index([propertyId, status])
   @@index([reportedById])
+}
+
+// Conversation on a ticket: replies, status changes and the escalation note.
+model IssueReply {
+  id        String   @id @default(cuid())
+  issueId   String
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  kind      String   @default("REPLY") // REPLY | STATUS | ESCALATED
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([issueId, createdAt])
 }
 
 enum BillType {

@@ -11,6 +11,7 @@ type Data = { issues: { total: number; items: Issue[] }; review: { total: number
 
 const pretty = (s: string) => s.replace(/_/g, " ").toLowerCase();
 const PRIORITY_STYLE: Record<string, string> = {
+  URGENT: "bg-destructive text-white",
   HIGH: "bg-destructive/10 text-destructive",
   MEDIUM: "bg-cream text-foreground",
   LOW: "bg-muted text-muted-foreground",
@@ -74,7 +75,7 @@ export default function QueuePopup({ role }: { role: string }) {
                   data.issues.items.length === 0
                     ? <p className="text-sm text-muted-foreground">No open issues.</p>
                     : data.issues.items.map((i) => (
-                        <Link key={i.id} href="/dashboard/issues" onClick={() => setOpen(false)} className="block rounded-2xl bg-cream/60 p-3 hover:bg-cream">
+                        <Link key={i.id} href={`/dashboard/issues/${i.id}`} onClick={() => setOpen(false)} className="block rounded-2xl bg-cream/60 p-3 hover:bg-cream">
                           <div className="flex items-start justify-between gap-2">
                             <p className="font-medium">{i.title}</p>
                             <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${PRIORITY_STYLE[i.priority] ?? ""}`}>{pretty(i.priority)}</span>

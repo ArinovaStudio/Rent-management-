@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { AlertCircle, Building2, ClipboardCheck, Contact, Inbox, LayoutDashboard, LogOut, Mail, PanelLeft, ShieldCheck, Users } from "lucide-react";
 import { propertiesBase } from "@/lib/routes";
 import QueuePopup from "./QueuePopup";
+import Toaster from "./Toaster";
 
 // TODO: point this at your real sign-out route.
 const SIGN_OUT_URL = "/api/auth/logout";
@@ -94,6 +95,7 @@ export function AdminShell({ role, name, children }: { role: string; name?: stri
         </header>
         <main className="flex-1 p-4 md:p-8">{children}</main>
       </div>
+      <Toaster />
     </div>
   );
 }
