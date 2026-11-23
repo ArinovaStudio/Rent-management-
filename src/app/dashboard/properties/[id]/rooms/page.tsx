@@ -11,6 +11,7 @@ import BuildingAllocationForm, { type BuildingFloor } from "./building-allocatio
 import SharedPersons from "./shared-persons";
 import { splitMain } from "@/lib/main-tenant";
 import BuildingResidentsTable, { type BuildingResidentRow } from "./building-residents-table";
+import BuildingHistory, { type HistoryRow } from "./building-history";
 import AllocationActions from "./allocation-actions";
 import RoomOccupants, { type OccupantFloor } from "./room-occupants";
 import AvailabilityManager from "./availability-manager";
@@ -49,6 +50,26 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
   const isPg = property.type === "PG";
   // PG and flats rented room by room are handled by room category. A flat rented as a whole has no room-wise view.
   const isBuilding = property.type === "BUILDING";
+
+  // ---- Building tenant history: everyone who checked out, from the values saved when they lived here ----
+  const fmt = (d: Date) => d.toLocaleDateString("en-IN");
+  let historyRows: HistoryRow[] = [];
+  if (isBuilding) {
+    const past = await prisma.allocation.findMany({
+      where: { status: "CHECKED_OUT", room: { propertyId: property.id } },
+      include: { room: { select: { label: true, floor: true, bedrooms: true } }, _count: { select: { documents: true } } },
+      orderBy: [{ moveOutDate: "desc" }, { updatedAt: "desc" }],
+    });
+    historyRows = past.map((a) => {
+      const out = a.moveOutDate ?? a.updatedAt;
+      const together = past.filter((b) => b.roomId === a.roomId && b.moveInDate <= out && (b.moveOutDate ?? b.updatedAt) >= a.moveInDate).length;
+      return {
+        id: a.id, name: a.fullName, phone: a.phone, email: a.email, role: a.isHousemate ? "Housemate" : "Main tenant",
+        floor: a.floorNumber ?? a.room.floor ?? 0, flat: a.roomLabel ?? a.room.label, bhk: a.roomBhk ?? a.room.bedrooms,
+        people: together, rent: a.monthlyRent, deposit: a.securityDeposit, moveIn: fmt(a.moveInDate), moveOut: fmt(out), docs: a._count.documents,
+      };
+    });
+  }
   const byCategory = (isPg || property.sharing) && !isBuilding;
   // Inactive rooms / flats (e.g. under construction) don't count as capacity and can't be allocated
   const liveRooms = property.rooms.filter((r) => r.isActive);
@@ -362,8 +383,13 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
             </Panel>
 
             <Panel>
-              <h2 className="text-lg font-semibold">Building residents</h2>
-              <p className="mb-4 text-sm text-muted-foreground">Main tenant of each flat, floor by floor.</p>
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Building residents</h2>
+                  <p className="text-sm text-muted-foreground">Main tenant of each flat, floor by floor.</p>
+                </div>
+                <BuildingHistory rows={historyRows} />
+              </div>
               <BuildingResidentsTable floors={floorNos} rows={tableRows} />
             </Panel>
           </>

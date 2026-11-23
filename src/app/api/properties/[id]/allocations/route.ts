@@ -83,7 +83,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           // The first person in a flat is its main tenant (rent, bills, one link). Anyone added later shares that link.
           const hasMain = room.allocations.some((a) => !a.isHousemate);
           const category = shareable ? "Shareable flat" : "Single flat";
-          const base = { roomId: room.id, moveInDate, occupants: 1, roomCategory: category, floorNumber: room.floor };
+          const base = { roomId: room.id, moveInDate, occupants: 1, roomCategory: category, floorNumber: room.floor, roomLabel: room.label, roomBhk: room.bedrooms };
           const tenant = await tx.allocation.create({
             data: { ...base, fullName, phone, email: email || null, monthlyRent: hasMain ? 0 : room.rent, securityDeposit: hasMain ? 0 : securityDeposit, isHousemate: hasMain, accessToken: randomBytes(32).toString("hex") },
             select: { id: true, accessToken: true, fullName: true },
@@ -177,6 +177,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             securityDeposit: isHousemate ? 0 : securityDeposit,
             isHousemate,
             roomCategory: category,
+            roomLabel: room.label,
+            roomBhk: room.bedrooms,
             floorNumber: roomFloor(property, room),
             accessToken,
           },

@@ -378,6 +378,10 @@ model Allocation {
 
   roomCategory    String?
   floorNumber     Int?
+  // Snapshots taken when the person moves in, so later edits to the flat never change a past tenant's record
+  roomLabel       String?
+  roomBhk         Int?
+  moveOutDate     DateTime?
 
   documents       ResidentDocument[]
   bills           ResidentBill[]

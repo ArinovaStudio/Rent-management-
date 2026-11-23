@@ -49,7 +49,7 @@ export async function PATCH(
 
   await prisma.allocation.update({
     where: { id },
-    data: { status: "CHECKED_OUT" },
+    data: { status: "CHECKED_OUT", moveOutDate: new Date() },
   });
 
   return NextResponse.json({ ok: true });
