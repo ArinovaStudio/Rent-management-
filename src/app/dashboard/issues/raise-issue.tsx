@@ -10,6 +10,7 @@ import { CATEGORIES, CATEGORY_LABEL, PRIORITIES, PRIORITY_LABEL } from "@/lib/is
 export type RaiseProperty = {
   id: string;
   name: string;
+  recipients: { id: string; name: string; label: string }[]; // first = main owner; more than one means the property has co-owners
   rooms: { id: string; label: string; floor: number | null; residents: { id: string; name: string }[] }[];
 };
 
@@ -34,12 +35,17 @@ export default function RaiseIssue({ properties, propertyId, label = "Raise an i
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("MEDIUM");
   const [neededBy, setNeededBy] = useState("");
+  const [recipientId, setRecipientId] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const property = properties.find((p) => p.id === pid);
   const rooms = property?.rooms ?? [];
+  // Flats rented as one unit have a single room named "Entire property": that is the same as "Whole property", so don't list it
+  const pickable = rooms.filter((r) => r.label !== "Entire property");
+  const recipients = property?.recipients ?? [];
+  const sendTo = recipients.find((r) => r.id === recipientId)?.id ?? recipients[0]?.id ?? "";
   const residents = useMemo(() => {
     const list = roomId ? rooms.filter((r) => r.id === roomId) : rooms;
     return list.flatMap((r) => r.residents.map((x) => ({ ...x, room: r.label })));
@@ -49,7 +55,7 @@ export default function RaiseIssue({ properties, propertyId, label = "Raise an i
 
   function reset() {
     setCategory(""); setRoomId(""); setAllocationId(""); setTitle(""); setDescription("");
-    setPriority("MEDIUM"); setNeededBy(""); setFiles([]); setError("");
+    setPriority("MEDIUM"); setNeededBy(""); setRecipientId(""); setFiles([]); setError("");
   }
   function close() { if (!busy) { setOpen(false); setError(""); } }
 
@@ -80,6 +86,7 @@ export default function RaiseIssue({ properties, propertyId, label = "Raise an i
     if (roomId) fd.set("roomId", roomId);
     if (allocationId) fd.set("allocationId", allocationId);
     if (neededBy) fd.set("neededBy", neededBy);
+    if (recipients.length > 1) fd.set("recipientId", sendTo);
     files.forEach((f) => fd.append("photos", f));
 
     try {
@@ -107,7 +114,7 @@ export default function RaiseIssue({ properties, propertyId, label = "Raise an i
         <div className="flex items-start justify-between gap-4 border-b border-cream p-5">
           <div>
             <h3 className="text-xl font-medium">Raise an issue</h3>
-            <p className="text-sm text-muted-foreground">Goes to the Property Admin who listed this property.</p>
+            <p className="text-sm text-muted-foreground">{recipients.length > 1 ? "Choose below who should get it." : "Goes to the Property Admin who listed this property."} <span className="text-destructive">*</span> means required.</p>
           </div>
           <button type="button" onClick={close} aria-label="Close"><X className="h-5 w-5" /></button>
         </div>
@@ -115,7 +122,7 @@ export default function RaiseIssue({ properties, propertyId, label = "Raise an i
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           {!propertyId && properties.length > 1 ? (
             <label className={lbl}><span className="font-medium">Property</span>
-              <select className="field" value={pid} onChange={(e) => { setPid(e.target.value); setRoomId(""); setAllocationId(""); }}>
+              <select className="field" value={pid} onChange={(e) => { setPid(e.target.value); setRoomId(""); setAllocationId(""); setRecipientId(""); }}>
                 {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
@@ -130,12 +137,14 @@ export default function RaiseIssue({ properties, propertyId, label = "Raise an i
                 {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
               </select>
             </label>
-            <label className={lbl}><span className="font-medium">Room / flat (optional)</span>
-              <select className="field" value={roomId} onChange={(e) => { setRoomId(e.target.value); setAllocationId(""); }}>
-                <option value="">Whole property</option>
-                {rooms.map((r) => <option key={r.id} value={r.id}>{r.floor != null ? `Floor ${r.floor} · ` : ""}{r.label}</option>)}
-              </select>
-            </label>
+            {pickable.length > 0 && (
+              <label className={lbl}><span className="font-medium">Room / flat (optional)</span>
+                <select className="field" value={roomId} onChange={(e) => { setRoomId(e.target.value); setAllocationId(""); }}>
+                  <option value="">Whole property</option>
+                  {pickable.map((r) => <option key={r.id} value={r.id}>{r.floor != null ? `Floor ${r.floor} · ` : ""}{r.label}</option>)}
+                </select>
+              </label>
+            )}
           </div>
 
           <label className={lbl}><span className="font-medium">Title *</span>
@@ -144,6 +153,20 @@ export default function RaiseIssue({ properties, propertyId, label = "Raise an i
           <label className={lbl}><span className="font-medium">Description *</span>
             <textarea className="field" rows={4} value={description} maxLength={4000} onChange={(e) => setDescription(e.target.value)} placeholder="What happened, since when, anything the owner should know" />
           </label>
+
+          {recipients.length > 1 && (
+            <div className={lbl}>
+              <span className="font-medium">Send this issue to *</span>
+              <div className="flex flex-wrap gap-2">
+                {recipients.map((r) => (
+                  <button key={r.id} type="button" aria-pressed={sendTo === r.id} onClick={() => setRecipientId(r.id)}
+                    className={`rounded-full px-4 py-1.5 text-sm transition-colors ${sendTo === r.id ? "bg-primary text-primary-foreground" : "bg-cream hover:bg-cream/70"}`}>
+                    {r.label} · {r.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className={lbl}>
             <span className="font-medium">Priority *</span>

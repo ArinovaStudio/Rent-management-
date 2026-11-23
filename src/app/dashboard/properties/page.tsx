@@ -117,7 +117,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                   {isManager && (
                     <RaiseIssue
                       propertyId={p.id}
-                      properties={[{ id: p.id, name: p.name, rooms: p.rooms.map((r) => ({ id: r.id, label: r.label, floor: r.floor ?? null, residents: r.allocations.map((a) => ({ id: a.id, name: a.fullName })) })) }]}
+                      properties={[{ id: p.id, name: p.name, recipients: [{ id: p.ownerId, name: p.owner.name, label: "Main owner" }, ...p.coOwners.map((c) => ({ id: c.userId, name: c.user.name, label: "Co-owner" }))], rooms: p.rooms.map((r) => ({ id: r.id, label: r.label, floor: r.floor ?? null, residents: r.allocations.map((a) => ({ id: a.id, name: a.fullName })) })) }]}
                     />
                   )}
                   {!isManager && !isCoOwner && <Link className={pill} href={`${base}/${p.id}/edit`}>Edit</Link>}

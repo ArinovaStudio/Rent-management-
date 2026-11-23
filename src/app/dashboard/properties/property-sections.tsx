@@ -21,10 +21,10 @@ export function Section({ id, title, hint, children }: { id?: string; title: str
 }
 
 // Labelled field wrapper. `wide` makes it span both columns.
-export function F({ label, wide, children }: { label: ReactNode; wide?: boolean; children: ReactNode }) {
+export function F({ label, wide, req, children }: { label: ReactNode; wide?: boolean; req?: boolean; children: ReactNode }) {
   return (
     <label className={`flex flex-col gap-2 text-sm ${wide ? "sm:col-span-2" : ""}`}>
-      <span className="font-medium">{label}</span>
+      <span className="font-medium">{label}{req && <span className="text-destructive" aria-hidden="true"> *</span>}</span>
       {children}
     </label>
   );
@@ -159,13 +159,13 @@ export function TagPicker({ presets, value, onChange, label, charges, onChargeCh
 }
 
 /** Dashed drop-style file picker (still a real <input type="file" name=...> so FormData picks it up). */
-export function FileDrop({ name, accept, title, hint, wide = true, onClear }: { name: string; accept: string; title: string; hint: string; wide?: boolean; onClear?: () => void }) {
+export function FileDrop({ name, accept, title, hint, wide = true, req, onClear }: { name: string; accept: string; title: string; hint: string; wide?: boolean; req?: boolean; onClear?: () => void }) {
   const [file, setFile] = useState("");
   return (
     <label className={`flex cursor-pointer items-center gap-4 rounded-2xl border-2 border-dashed border-primary/30 bg-cream/60 px-5 py-4 transition-colors hover:border-primary hover:bg-primary/5 ${wide ? "sm:col-span-2" : ""}`}>
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-background text-primary">{file ? <FileText className="h-5 w-5" /> : <Upload className="h-5 w-5" />}</span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium">{file || title}</span>
+        <span className="block truncate font-medium">{file || title}{!file && req && <span className="text-destructive"> *</span>}</span>
         <span className="block text-xs text-muted-foreground">{file ? "Click to choose a different file" : hint}</span>
       </span>
       {file && onClear && <span role="button" aria-label="Clear" onClick={(e) => { e.preventDefault(); setFile(""); onClear(); }} className="shrink-0 rounded-full bg-background p-1.5 text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></span>}

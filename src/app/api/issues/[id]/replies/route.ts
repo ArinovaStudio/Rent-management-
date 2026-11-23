@@ -11,7 +11,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const issue = await prisma.issue.findUnique({
     where: { id },
-    include: { property: { include: { owner: { select: { email: true } } } }, reportedBy: { select: { email: true } } },
+    include: { property: { include: { owner: { select: { email: true } } } }, recipient: { select: { email: true } }, reportedBy: { select: { email: true } } },
   });
   if (!issue || !(await canSeeIssue(me, issue))) return NextResponse.json({ error: "Issue not found." }, { status: 404 });
 
@@ -22,7 +22,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   await prisma.issueReply.create({ data: { issueId: id, authorId: me.id, kind: "REPLY", message } });
 
   await notifyEmails(
-    [issue.reportedBy.email, issue.property.owner.email, ...(issue.escalatedAt ? await superAdminEmails() : [])].filter((e) => e !== me.email),
+    [issue.reportedBy.email, issue.property.owner.email, issue.recipient?.email, ...(issue.escalatedAt ? await superAdminEmails() : [])].filter((e) => e !== me.email),
     `New reply on ticket #${issue.ticketNo}: ${issue.title}`,
     `${me.name} replied on the ticket at "${issue.property.name}":\n\n${message}`
   );

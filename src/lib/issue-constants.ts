@@ -14,5 +14,6 @@ export const ROLE_LABEL: Record<Role, string> = { SUPER_ADMIN: "Super Admin", PR
 
 export const priorityTone = (p: string) => (p === "HIGH" || p === "URGENT" ? ("bad" as const) : ("neutral" as const));
 export const statusTone = (s: string) => (s === "RESOLVED" || s === "CLOSED" ? ("good" as const) : ("neutral" as const));
-export const withWho = (i: { escalatedAt: Date | null }) => (i.escalatedAt ? "Super Admin" : "Property Admin");
+export const withWho = (i: { escalatedAt: Date | null; recipientId?: string | null }) =>
+  i.escalatedAt ? "Super Admin" : i.recipientId ? "Co-owner" : "Property Admin";
 

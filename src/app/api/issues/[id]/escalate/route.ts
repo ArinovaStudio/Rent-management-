@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-import { notifyEmails, superAdminEmails } from "@/lib/issues";
+import { canUpdateIssue, notifyEmails, superAdminEmails } from "@/lib/issues";
 
 // The Property Admin who owns the property passes the ticket on to the Super Admin.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -14,8 +14,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     include: { property: { select: { name: true, ownerId: true } }, reportedBy: { select: { email: true } } },
   });
   if (!issue) return NextResponse.json({ error: "Issue not found." }, { status: 404 });
-  if (me.role !== "PROPERTY_ADMIN" || issue.property.ownerId !== me.id) {
-    return NextResponse.json({ error: "Only the Property Admin of this property can escalate." }, { status: 403 });
+  if (me.role !== "PROPERTY_ADMIN" || !canUpdateIssue(me, issue)) {
+    return NextResponse.json({ error: "Only the Property Admin or co-owner this ticket is with can escalate." }, { status: 403 });
   }
   if (issue.escalatedAt) return NextResponse.json({ error: "Already with the Super Admin." }, { status: 409 });
 

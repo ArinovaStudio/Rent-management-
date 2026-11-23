@@ -40,7 +40,9 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
       ? prisma.property.findMany({
           where: { managers: { some: { managerId: me.id } } },
           select: {
-            id: true, name: true,
+            id: true, name: true, ownerId: true,
+            owner: { select: { name: true } },
+            coOwners: { select: { userId: true, user: { select: { name: true } } } },
             rooms: {
               select: { id: true, label: true, floor: true, allocations: { where: { status: "ACTIVE" }, select: { id: true, fullName: true } } },
               orderBy: { createdAt: "asc" },
@@ -53,6 +55,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
 
   const raise: RaiseProperty[] = properties.map((p) => ({
     id: p.id, name: p.name,
+    recipients: [{ id: p.ownerId, name: p.owner.name, label: "Main owner" }, ...p.coOwners.map((c) => ({ id: c.userId, name: c.user.name, label: "Co-owner" }))],
     rooms: p.rooms.map((r) => ({ id: r.id, label: r.label, floor: r.floor ?? null, residents: r.allocations.map((a) => ({ id: a.id, name: a.fullName })) })),
   }));
 

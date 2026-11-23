@@ -123,6 +123,7 @@ model User {
   managedProperties PropertyManager[] @relation("ManagedProperties")
   reportedIssues    Issue[]           @relation("ReportedIssues")
   issueReplies      IssueReply[]
+  receivedIssues    Issue[]           @relation("IssueRecipient")
   // Null for accounts created before owner onboarding existed, for Super Admins and for managers.
   ownerProfile  OwnerProfile?
 }
@@ -528,12 +529,16 @@ model Issue {
   neededBy       DateTime?
   images         Json          @default("[]")
   escalatedAt    DateTime?
+  // Who the ticket was sent to: null = the property's main owner, otherwise a co-owner chosen by the manager
+  recipientId    String?
+  recipient      User?         @relation("IssueRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
   replies        IssueReply[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   @@index([propertyId, status])
   @@index([reportedById])
+  @@index([recipientId])
 }
 
 // Conversation on a ticket: replies, status changes and the escalation note.

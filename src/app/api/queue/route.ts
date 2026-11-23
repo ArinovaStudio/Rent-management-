@@ -3,6 +3,7 @@ import type { IssueStatus, ReviewStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { getVerificationStatus } from "@/lib/owner-status";
+import { issueScope } from "@/lib/issues";
 
 const RANK = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 } as const;
 const OPEN: IssueStatus[] = ["OPEN", "IN_PROGRESS"];
@@ -14,11 +15,7 @@ export async function GET() {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
 
-  const scope =
-    me.role === "SUPER_ADMIN" ? {}
-    : me.role === "PROPERTY_MANAGER" ? { property: { managers: { some: { managerId: me.id } } } }
-    : { property: { ownerId: me.id } };
-  const issueWhere = { ...scope, status: { in: OPEN } };
+  const issueWhere = { ...issueScope(me), status: { in: OPEN } };
 
   const [issueTotal, issueRows] = await Promise.all([
     prisma.issue.count({ where: issueWhere }),

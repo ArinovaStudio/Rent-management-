@@ -10,14 +10,14 @@ import Toaster from "./Toaster";
 // TODO: point this at your real sign-out route.
 const SIGN_OUT_URL = "/api/auth/logout";
 
-type Item = { title: string; url: string; icon: typeof Inbox; superOnly?: boolean; soon?: boolean; hideFor?: string };
+type Item = { title: string; url: string; icon: typeof Inbox; superOnly?: boolean; soon?: boolean; hideFor?: string[] };
 
 // Items marked `soon` are Najm sections we copied for layout only; wire them up (or delete them) later.
 const NAV: Item[] = [
   { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
   { title: "Properties", url: "/dashboard/properties", icon: Building2 },
-  { title: "Users", url: "/dashboard/users", icon: Users, hideFor: "PROPERTY_MANAGER" },
-  { title: "My requests", url: "/dashboard/requests", icon: Inbox, hideFor: "SUPER_ADMIN" },
+  { title: "Users", url: "/dashboard/users", icon: Users, hideFor: ["PROPERTY_MANAGER"] },
+  { title: "My requests", url: "/dashboard/requests", icon: Inbox, hideFor: ["SUPER_ADMIN", "PROPERTY_MANAGER"] },
   { title: "Issues", url: "/dashboard/issues", icon: AlertCircle },
   { title: "Property approvals", url: "/admin/approvals", icon: ClipboardCheck, superOnly: true },
   { title: "KYC reviews", url: "/admin/kyc", icon: ShieldCheck, superOnly: true },
@@ -31,7 +31,7 @@ export function AdminShell({ role, name, children }: { role: string; name?: stri
   const [collapsed, setCollapsed] = useState(false);
   const [open, setOpen] = useState(false);
   const isSuper = role === "SUPER_ADMIN";
-  const items = NAV.filter((n) => (!n.superOnly || isSuper) && n.hideFor !== role).map((n) => (n.title === "Properties" ? { ...n, url: propertiesBase(role) } : n.title === "Dashboard" ? { ...n, url: isSuper ? "/admin" : "/dashboard" } : n));  // Most specific match wins, so /dashboard/admin/kyc doesn't also light up "Dashboard".
+  const items = NAV.filter((n) => (!n.superOnly || isSuper) && !n.hideFor?.includes(role)).map((n) => (n.title === "Properties" ? { ...n, url: propertiesBase(role) } : n.title === "Dashboard" ? { ...n, url: isSuper ? "/admin" : "/dashboard" } : n));  // Most specific match wins, so /dashboard/admin/kyc doesn't also light up "Dashboard".
   const active = items.filter((n) => !n.soon && (path === n.url || path.startsWith(`${n.url}/`))).sort((a, b) => b.url.length - a.url.length)[0]?.url;
   const label = collapsed ? "lg:hidden" : "";
 

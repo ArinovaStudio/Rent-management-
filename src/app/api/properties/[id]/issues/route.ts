@@ -30,6 +30,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   let roomId = str("roomId", 40) || null;
   const allocationId = str("allocationId", 40) || null;
   const neededByRaw = str("neededBy", 10);
+  const recipientInput = str("recipientId", 40) || null;
 
   if (!CATEGORIES.includes(category as never)) return fail("Choose a category.");
   if (!title || !description) return fail("Add a title and a description.");
@@ -42,9 +43,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    include: { owner: { select: { email: true, role: true } } },
+    include: { owner: { select: { email: true } }, coOwners: { select: { userId: true } } },
   });
   if (!property) return fail("Property not found.", 404);
+
+  // Sent to the main owner unless the manager picked one of the property's co-owners
+  const toId = recipientInput ?? property.ownerId;
+  if (toId !== property.ownerId && !property.coOwners.some((c) => c.userId === toId)) return fail("Choose who to send this to.");
+  const recipient = await prisma.user.findUnique({ where: { id: toId }, select: { email: true, role: true } });
+  if (!recipient) return fail("Choose who to send this to.");
 
   if (roomId && !(await prisma.room.findFirst({ where: { id: roomId, propertyId }, select: { id: true } }))) {
     return fail("Choose a room from this property.");
@@ -70,8 +77,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       data: {
         propertyId, roomId, allocationId, reportedById: me.id, title, description,
         category: category as never, priority: priority as never, neededBy, images,
-        // a property listed by the Super Admin has no Property Admin in between
-        escalatedAt: property.owner.role === "SUPER_ADMIN" ? new Date() : null,
+        recipientId: toId === property.ownerId ? null : toId,
+        // a ticket sent to a Super Admin has no Property Admin in between
+        escalatedAt: recipient.role === "SUPER_ADMIN" ? new Date() : null,
       },
       select: { id: true, ticketNo: true },
     });
@@ -81,7 +89,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   await notifyEmails(
-    [property.owner.email],
+    [recipient.email, property.owner.email],
     `New issue #${issue.ticketNo} at "${property.name}": ${title}`,
     `${me.name} raised an issue (${priority.toLowerCase()} priority, ${CATEGORY_LABEL[category as keyof typeof CATEGORY_LABEL]}):\n\n${title}\n\n${description}\n\nSign in and open Issues to respond.`
   );

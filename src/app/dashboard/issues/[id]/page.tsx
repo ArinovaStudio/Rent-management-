@@ -4,10 +4,9 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-import { canEditProperty } from "@/lib/permissions";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip } from "@/app/admin/ui";
-import { CATEGORY_LABEL, PRIORITY_LABEL, ROLE_LABEL, STATUS_LABEL, canSeeIssue, priorityTone, statusTone, withWho } from "@/lib/issues";
+import { CATEGORY_LABEL, PRIORITY_LABEL, ROLE_LABEL, STATUS_LABEL, canSeeIssue, canUpdateIssue, priorityTone, statusTone, withWho } from "@/lib/issues";
 import TicketActions from "./ticket-actions";
 
 const fmt = (d: Date) => d.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
@@ -29,13 +28,14 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
       room: { select: { label: true } },
       allocation: { select: { fullName: true, phone: true } },
       reportedBy: { select: { name: true } },
+      recipient: { select: { name: true } },
       replies: { orderBy: { createdAt: "asc" }, include: { author: { select: { name: true, role: true } } } },
     },
   });
   if (!issue || !(await canSeeIssue(me, issue))) notFound();
 
-  const canUpdate = canEditProperty(me, issue.property);
-  const canEscalate = me.role === "PROPERTY_ADMIN" && issue.property.ownerId === me.id && !issue.escalatedAt;
+  const canUpdate = canUpdateIssue(me, issue);
+  const canEscalate = me.role === "PROPERTY_ADMIN" && canUpdate && !issue.escalatedAt;
   const images = (Array.isArray(issue.images) ? issue.images : []) as string[];
 
   return (
@@ -67,7 +67,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
               <Field label="Raised by">{issue.reportedBy.name}</Field>
               <Field label="Raised on">{fmt(issue.createdAt)}</Field>
               <Field label="Needed by">{issue.neededBy ? issue.neededBy.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "—"}</Field>
-              <Field label="Property Admin">{issue.property.owner.name}</Field>
+              <Field label="Sent to">{issue.recipient ? `${issue.recipient.name} (co-owner)` : `${issue.property.owner.name} (owner)`}</Field>
               <Field label="Resident affected">{issue.allocation ? `${issue.allocation.fullName} · ${issue.allocation.phone}` : "—"}</Field>
               {issue.escalatedAt && <Field label="Escalated on">{fmt(issue.escalatedAt)}</Field>}
             </div>

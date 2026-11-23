@@ -37,10 +37,8 @@ export async function POST(req: Request) {
     return u instanceof File && u.size > 0 ? u : null;
   };
   const idFile = pick("document");
-  const addressFile = pick("addressProof");
   const fileErrors: Record<string, string> = {};
   if (!idFile) fileErrors.document = "Upload a photo or PDF of the person's ID.";
-  if (!addressFile) fileErrors.addressProof = "Upload the person's address proof.";
   if (Object.keys(fileErrors).length) return bad(fileErrors);
 
   if (await prisma.user.findUnique({ where: { email } })) {
@@ -62,7 +60,10 @@ export async function POST(req: Request) {
             idNumberMasked: maskIdNumber(d.idNumber!), // required by validateStep2 here, so never null
             addressLine1: d.addressLine1, addressLine2: d.addressLine2,
             city: d.city, state: d.state, postalCode: d.postalCode,
-            completedSteps: 2, // the person completes step 3 (relationship and consents) themselves on first login
+            // Created and vouched for by an admin: no onboarding wizard (relationship, consents) and no verification step.
+            completedSteps: 3,
+            onboardingCompletedAt: new Date(),
+            verificationStatus: "VERIFIED",
           },
         },
       },
@@ -77,12 +78,11 @@ export async function POST(req: Request) {
 
   // Store the files. If anything fails, remove the account again so nothing half-created remains.
   const profileId = user.ownerProfile!.id;
-  const stored: { type: "ID_DOCUMENT" | "ADDRESS_PROOF"; name: string; file: StoredSensitiveFile }[] = [];
+  const stored: { type: "ID_DOCUMENT"; name: string; file: StoredSensitiveFile }[] = [];
   let failure: { field: string; error: string } | null = null;
 
   for (const [type, file, field] of [
     ["ID_DOCUMENT", idFile, "document"],
-    ["ADDRESS_PROOF", addressFile, "addressProof"],
   ] as const) {
     if (!file) continue;
     const r = await saveSensitiveFile(file, `owners/${profileId}`);
@@ -102,8 +102,8 @@ export async function POST(req: Request) {
         prisma.auditEvent.create({
           data: {
             subjectType: "OWNER_KYC", subjectId: profileId, actorId: me.id, action: "CREATE",
-            fromStatus: "NONE", toStatus: "CONTACT_PENDING",
-            note: `Created by ${me.name} (${me.role}). Creator declared the documents were collected with the person's consent.`,
+            fromStatus: "NONE", toStatus: "VERIFIED",
+            note: `Created by ${me.name} (${me.role}) and verified on creation. Creator declared the ID document was collected with the person's consent.`,
           },
         }),
       ]);
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
   await notify(
     email,
     "Your account has been created",
-    `Hi ${name},\n\n${me.name} created a ${role === "PROPERTY_MANAGER" ? "Property Manager" : "Property Admin"} account for you.\n\nSign in with the temporary password you were given, verify your email on your dashboard, and your account will then go for verification.`
+    `Hi ${name},\n\n${me.name} created a ${role === "PROPERTY_MANAGER" ? "Property Manager" : "Property Admin"} account for you.\n\nSign in with the temporary password you were given. Your account is ready to use.`
   );
 
   return NextResponse.json({ id: user.id, name: user.name, email: user.email, role: user.role }, { status: 201 });

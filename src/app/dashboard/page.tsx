@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageProperties } from "@/lib/permissions";
 import { getVerificationStatus, SMS_VERIFICATION_ENABLED, STATUS_HELP, STATUS_LABEL } from "@/lib/owner-status";
 import { propertiesBase } from "@/lib/routes";
+import { issueScope } from "@/lib/issues";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip, toneFor } from "@/app/admin/ui";
 import VerificationActions from "./verification-actions";
@@ -25,10 +26,7 @@ export default async function Dashboard() {
     me.role === "SUPER_ADMIN" ? {}
     : isManager ? { managers: { some: { managerId: me.id } } }
     : { OR: [{ ownerId: me.id }, { coOwners: { some: { userId: me.id } } }] };
-  const issueWhere =
-    me.role === "SUPER_ADMIN" ? {}
-    : isManager ? { property: { managers: { some: { managerId: me.id } } } }
-    : { property: { ownerId: me.id } };
+  const issueWhere = issueScope(me);
   const openWhere = { ...issueWhere, status: { in: ["OPEN", "IN_PROGRESS"] as ("OPEN" | "IN_PROGRESS")[] } };
 
   const [user, properties, allocations, openCount, openIssues, verification] = await Promise.all([

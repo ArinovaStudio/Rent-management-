@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-import { canEditProperty } from "@/lib/permissions";
-import { STATUS_LABEL, notifyEmails, superAdminEmails } from "@/lib/issues";
+import { STATUS_LABEL, canUpdateIssue, notifyEmails, superAdminEmails } from "@/lib/issues";
 
 const STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"] as const;
 
@@ -14,10 +13,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const issue = await prisma.issue.findUnique({
     where: { id },
-    include: { property: { include: { owner: { select: { email: true } } } }, reportedBy: { select: { email: true } } },
+    include: { property: { include: { owner: { select: { email: true } } } }, recipient: { select: { email: true } }, reportedBy: { select: { email: true } } },
   });
   if (!issue) return NextResponse.json({ error: "Issue not found." }, { status: 404 });
-  if (!canEditProperty(me, issue.property)) {
+  if (!canUpdateIssue(me, issue)) {
     return NextResponse.json({ error: "You can't update this issue." }, { status: 403 });
   }
 
@@ -44,7 +43,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   ]);
 
   await notifyEmails(
-    [issue.reportedBy.email, issue.property.owner.email, ...(issue.escalatedAt ? await superAdminEmails() : [])].filter((e) => e !== me.email),
+    [issue.reportedBy.email, issue.property.owner.email, issue.recipient?.email, ...(issue.escalatedAt ? await superAdminEmails() : [])].filter((e) => e !== me.email),
     `Ticket #${issue.ticketNo} update: ${issue.title}`,
     `${me.name} updated the ticket at "${issue.property.name}". Status: ${label}.${note ? `\n\nNote: ${note}` : ""}`
   );

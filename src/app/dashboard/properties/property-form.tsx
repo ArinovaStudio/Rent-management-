@@ -402,7 +402,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
           </Section>
 
           <Section id="basics" title="Basics">
-            <F label="Property title" wide>
+            <F label="Property title" req wide>
               <input className="field" name="name" required maxLength={150} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Premium furnished PG near ...." />
             </F>
 
@@ -529,8 +529,8 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
           </Section>
 
           <Section id="location" title="Location">
-            <F label="Address" wide><input className="field" name="address" required value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, area, landmark" /></F>
-            <F label="City"><input className="field" name="city" required value={city} onChange={(e) => setCity(e.target.value)} placeholder="Enter city" /></F>
+            <F label="Address" req wide><input className="field" name="address" required value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, area, landmark" /></F>
+            <F label="City" req><input className="field" name="city" required value={city} onChange={(e) => setCity(e.target.value)} placeholder="Enter city" /></F>
             <F label="District"><input className="field" name="district" maxLength={80} defaultValue={L?.district ?? ""} placeholder="Enter district" /></F>
             <F label="State"><input className="field" name="state" maxLength={80} defaultValue={L?.state ?? ""} placeholder="Enter state" /></F>
             <F label="Google Maps link (optional)" wide>
