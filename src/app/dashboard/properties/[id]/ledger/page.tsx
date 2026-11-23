@@ -1,0 +1,76 @@
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { prisma } from "@/lib/db";
+import { getCurrentUser } from "@/lib/current-user";
+import { canOperateProperty } from "@/lib/property-access";
+import { propertiesBase } from "@/lib/routes";
+import { AdminShell, Panel } from "@/components/admin/AdminShell";
+import { monthLabel } from "@/lib/bills";
+import LedgerTable, { type LedgerRow } from "./ledger-table";
+
+const periodOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const shift = (period: string, by: number) => periodOf(new Date(Number(period.slice(0, 4)), Number(period.slice(5, 7)) - 1 + by, 1));
+
+export default async function PaymentLedgerPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ period?: string }> }) {
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  const { id } = await params;
+  const sp = await searchParams;
+  const period = sp.period && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.period) ? sp.period : periodOf(new Date());
+
+  const property = await prisma.property.findUnique({
+    where: { id },
+    include: {
+      rooms: {
+        include: {
+          allocations: {
+            where: { status: "ACTIVE", isHousemate: false, monthlyRent: { gt: 0 } },
+            include: {
+              rentPayments: { where: { period } },
+              bills: { orderBy: { period: "desc" } },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!property || !(await canOperateProperty(me, property))) notFound();
+
+  const rows: LedgerRow[] = property.rooms
+    .flatMap((room) => room.allocations.map((a) => ({ a, room })))
+    .sort((x, y) => (x.room.floor ?? 0) - (y.room.floor ?? 0) || x.room.label.localeCompare(y.room.label, undefined, { numeric: true }))
+    .map(({ a, room }) => {
+      const pay = a.rentPayments[0];
+      return {
+        id: a.id, name: a.fullName, phone: a.phone, email: a.email,
+        floor: a.floorNumber ?? room.floor ?? 0, flat: a.roomLabel ?? room.label,
+        rent: a.monthlyRent, rentPaid: !!pay?.paid, rentPaidOn: pay?.paid ? (pay.paidAt ?? pay.updatedAt).toLocaleDateString("en-IN") : null,
+        bills: a.bills.map((b) => ({ id: b.id, type: b.type, period: b.period, amount: b.amount, paid: b.paid, paidOn: b.paid ? (b.paidAt ?? b.updatedAt).toLocaleDateString("en-IN") : null, note: b.note })),
+      };
+    });
+  const floors = [...new Set(rows.map((r) => r.floor))].sort((a, b) => a - b);
+  const name = (me as unknown as { name?: string }).name ?? "Account";
+  const base = `${propertiesBase(me.role)}/${property.id}/ledger`;
+  const navBtn = "flex h-10 w-10 items-center justify-center rounded-full bg-background hover:bg-cream";
+
+  return (
+    <AdminShell role={me.role} name={name}>
+      <div className="mb-8 flex flex-wrap items-center gap-4">
+        <Link href={propertiesBase(me.role)} aria-label="Back" className={navBtn}><ArrowLeft className="h-5 w-5" /></Link>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-4xl font-medium tracking-tight">{property.name}</h1>
+          <p className="text-muted-foreground">Payment ledger · who has paid rent and bills</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href={`${base}?period=${shift(period, -1)}`} aria-label="Previous month" className={navBtn}><ChevronLeft className="h-5 w-5" /></Link>
+          <span className="min-w-28 text-center font-medium">{monthLabel(period)}</span>
+          <Link href={`${base}?period=${shift(period, 1)}`} aria-label="Next month" className={navBtn}><ChevronRight className="h-5 w-5" /></Link>
+        </div>
+      </div>
+      <Panel>
+        <LedgerTable floors={floors} rows={rows} period={period} />
+      </Panel>
+    </AdminShell>
+  );
+}

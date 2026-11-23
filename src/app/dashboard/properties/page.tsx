@@ -125,6 +125,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                   {isCoOwner
                     ? <Link className={pill} href={`${base}/${p.id}/co-owner-documents`}>Submit co-owner proof documents</Link>
                     : <Link className={pill} href={`${base}/${p.id}/rooms`}>Room status & allocations</Link>}
+                  {!isCoOwner && <Link className={pill} href={`${base}/${p.id}/ledger`}>Payment ledger</Link>}
                 </div>
               </Panel>
             );

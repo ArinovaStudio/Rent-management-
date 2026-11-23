@@ -99,6 +99,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                   {!isManager && <Link className={pill} href={`${base}/${p.id}/edit`}>Edit</Link>}
                   {!isManager && <Link className={pill} href={`${base}/${p.id}/managers`}>Managers</Link>}
                   <Link className={pill} href={`${base}/${p.id}/rooms`}>Room status & allocations</Link>
+                  <Link className={pill} href={`${base}/${p.id}/ledger`}>Payment ledger</Link>
                 </div>
               </Panel>
             );

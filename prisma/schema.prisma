@@ -385,6 +385,7 @@ model Allocation {
 
   documents       ResidentDocument[]
   bills           ResidentBill[]
+  rentPayments    RentPayment[]
 
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
@@ -580,5 +581,22 @@ model ResidentBill {
   updatedAt    DateTime   @updatedAt
 
   @@unique([allocationId, type, period])
+  @@index([allocationId])
+}
+
+// Rent paid / unpaid per month for a main tenant. Managers set it from the Payment Ledger.
+model RentPayment {
+  id           String     @id @default(cuid())
+  allocationId String
+  allocation   Allocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+  period       String // "2026-11"
+  amount       Int // rent that month, saved when the status is set
+  paid         Boolean    @default(false)
+  paidAt       DateTime?
+  updatedById  String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([allocationId, period])
   @@index([allocationId])
 }

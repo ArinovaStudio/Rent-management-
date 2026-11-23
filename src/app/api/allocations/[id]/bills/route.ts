@@ -54,3 +54,17 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   await prisma.residentBill.deleteMany({ where: { id: String(billId ?? ""), allocationId: id } });
   return NextResponse.json({ ok: true });
 }
+
+// Changes only the paid / unpaid status of one bill
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const g = await load(id);
+  if ("error" in g) return g.error;
+  const b = await req.json().catch(() => ({}));
+  if (typeof b.paid !== "boolean") return NextResponse.json({ error: "Choose paid or unpaid." }, { status: 400 });
+  const bill = await prisma.residentBill.findFirst({ where: { id: String(b.billId ?? ""), allocationId: id }, select: { id: true, paid: true, paidAt: true } });
+  if (!bill) return NextResponse.json({ error: "Bill not found." }, { status: 404 });
+  const paidAt = b.paid ? (bill.paid ? bill.paidAt ?? new Date() : new Date()) : null;
+  const updated = await prisma.residentBill.update({ where: { id: bill.id }, data: { paid: b.paid, paidAt } });
+  return NextResponse.json(updated);
+}

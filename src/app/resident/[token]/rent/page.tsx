@@ -19,6 +19,7 @@ export default async function RentPage({ params }: { params: Promise<{ token: st
   const amenity = a.monthlyRent > 0 ? amenityCharges(property) : { list: [], total: 0 };
   const due = nextRentDue(a.moveInDate);
   const period = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}`;
+  const paidRow = await prisma.rentPayment.findUnique({ where: { allocationId_period: { allocationId: a.id, period } } });
   const category = a.roomCategory ?? roomCategoryLabel(property, a.room);
   const floor = a.floorNumber ?? roomFloor(property, a.room);
   const household = isWholeUnit(property)
@@ -29,8 +30,8 @@ export default async function RentPage({ params }: { params: Promise<{ token: st
     invoiceNo: `RENT-${token.slice(0, 4).toUpperCase()}-${period.replace("-", "")}`,
     kind: "RENT",
     periodLabel: monthLabel(period),
-    status: "DUE",
-    paidOn: null,
+    status: paidRow?.paid ? "PAID" : "DUE",
+    paidOn: paidRow?.paid ? fmtDate(paidRow.paidAt ?? paidRow.updatedAt) : null,
     from: { name: property.name, lines: propertyLines(property) },
     to: {
       name: a.fullName,
