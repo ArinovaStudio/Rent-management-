@@ -1,13 +1,13 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { authFetch } from "@/lib/fetch-auth";
 import { Panel } from "@/components/admin/AdminShell";
 
 type M = { id: string; name: string; email: string };
 
 export default function ManagerAssigner({ propertyId, assigned, candidates }: { propertyId: string; assigned: M[]; candidates: M[] }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [managerId, setManagerId] = useState(candidates[0]?.id ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -23,7 +23,7 @@ export default function ManagerAssigner({ propertyId, assigned, candidates }: { 
     const body = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) return setError(body.error ?? "Something went wrong.");
-    router.refresh();
+    refresh();
     if (method === "POST") setManagerId("");
   }
 

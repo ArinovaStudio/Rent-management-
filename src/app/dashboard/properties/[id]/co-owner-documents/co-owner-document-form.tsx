@@ -1,13 +1,13 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { authFetch } from "@/lib/fetch-auth";
 
 const ACCEPT = "application/pdf,image/jpeg,image/png,image/webp";
 type Existing = { id: string; name: string; originalName: string; uploadedAt: string | Date };
 
 export default function CoOwnerDocumentForm({ propertyId, documents }: { propertyId: string; documents: Existing[] }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -19,7 +19,7 @@ export default function CoOwnerDocumentForm({ propertyId, documents }: { propert
     const body = await response.json().catch(() => ({}));
     setBusy(false);
     if (!response.ok) { setError(body.error ?? "Could not upload the document."); return; }
-    form.reset(); setSuccess("Proof document uploaded successfully."); router.refresh();
+    form.reset(); setSuccess("Proof document uploaded successfully."); refresh();
   }
   return (
     <div className="space-y-6">

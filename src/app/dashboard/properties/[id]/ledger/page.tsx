@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getSessionUser } from "@/lib/current-user";
 import { canOperateProperty } from "@/lib/property-access";
 import { propertiesBase } from "@/lib/routes";
 import { AdminShell, Panel } from "@/components/admin/AdminShell";
@@ -13,7 +13,7 @@ const periodOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).pad
 const shift = (period: string, by: number) => periodOf(new Date(Number(period.slice(0, 4)), Number(period.slice(5, 7)) - 1 + by, 1));
 
 export default async function PaymentLedgerPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ period?: string }> }) {
-  const me = await getCurrentUser();
+  const me = await getSessionUser();
   if (!me) redirect("/login");
   const { id } = await params;
   const sp = await searchParams;

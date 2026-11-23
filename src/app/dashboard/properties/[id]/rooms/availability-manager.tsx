@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { Power, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
 
@@ -13,7 +13,7 @@ const btn = "shrink-0 rounded-full bg-cream px-4 py-1.5 text-sm hover:bg-cream/7
 export default function AvailabilityManager({ propertyId, propertyActive, propertyNote, rooms, roomWord }: {
   propertyId: string; propertyActive: boolean; propertyNote: string | null; rooms: AvailRoom[]; roomWord: string | null; // roomWord: "room" | "flat", null = no per-room list
 }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -32,7 +32,7 @@ export default function AvailabilityManager({ propertyId, propertyActive, proper
     const data = await res.json().catch(() => ({}));
     setBusy("");
     if (!res.ok) return setError(data.error ?? "Something went wrong.");
-    router.refresh();
+    refresh();
   }
 
   const floors = [...new Set(rooms.map((r) => r.floor ?? 0))].sort((a, b) => a - b);

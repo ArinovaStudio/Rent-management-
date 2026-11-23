@@ -1,13 +1,13 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { authFetch } from "@/lib/fetch-auth";
 
 type Option = { action: string; label: string; needsNote: boolean };
 
 // Approve / reject / request-info buttons with one shared note box. `url` is the review endpoint.
 export default function ReviewPanel({ url, options }: { url: string; options: Option[] }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -25,7 +25,7 @@ export default function ReviewPanel({ url, options }: { url: string; options: Op
     setBusy(false);
     if (!res.ok) return setError(body.error ?? "Something went wrong.");
     setNote("");
-    router.refresh();
+    refresh();
   }
 
   const style = (action: string) =>

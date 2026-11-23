@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { ArrowUpRight, Loader2 } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
 import { toast } from "@/lib/toast";
@@ -12,7 +12,7 @@ const soft = "flex items-center gap-2 rounded-full bg-cream px-5 py-2.5 text-sm 
 export default function TicketActions({ issueId, status, canUpdate, canEscalate }: {
   issueId: string; status: string; canUpdate: boolean; canEscalate: boolean;
 }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [reply, setReply] = useState("");
@@ -29,7 +29,7 @@ export default function TicketActions({ issueId, status, canUpdate, canEscalate 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setError(data.error ?? "Something went wrong."); toast(data.error ?? "Something went wrong.", "error"); return false; }
       toast(ok);
-      router.refresh();
+      refresh();
       return true;
     } catch {
       setError("Network problem. Try again.");

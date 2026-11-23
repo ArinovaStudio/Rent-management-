@@ -20,3 +20,10 @@ export function nextRentDue(moveIn: Date, now = new Date()) {
   const d = make(now.getFullYear(), now.getMonth());
   return d < today ? make(now.getFullYear(), now.getMonth() + 1) : d;
 }
+// Rent is tracked per calendar month (same month the Payment Ledger uses)
+export const rentPeriod = (now = new Date()) => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+// Move-in day of the month inside `period`
+export function rentDueDate(moveIn: Date, period: string) {
+  const y = Number(period.slice(0, 4)), m = Number(period.slice(5, 7)) - 1;
+  return new Date(y, m, Math.min(moveIn.getDate(), new Date(y, m + 1, 0).getDate()));
+}

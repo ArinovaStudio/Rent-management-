@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { ImagePlus, Loader2, Megaphone, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
 import { toast } from "@/lib/toast";
@@ -22,7 +22,7 @@ const MAX_MB = 5;
 export default function RaiseIssue({ properties, propertyId, label = "Raise an issue", variant = "soft" }: {
   properties: RaiseProperty[]; propertyId?: string; label?: string; variant?: "primary" | "soft";
 }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -100,7 +100,7 @@ export default function RaiseIssue({ properties, propertyId, label = "Raise an i
       toast(`Issue raised · Ticket #${data.ticketNo}`);
       reset();
       setOpen(false);
-      router.refresh();
+      refresh();
     } catch {
       setError("Network problem. Try again.");
     } finally {

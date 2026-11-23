@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { authFetch } from "@/lib/fetch-auth";
 import { toast } from "@/lib/toast";
 import { ID_TYPES, ID_TYPE_LABEL } from "@/lib/owner-validation";
@@ -10,7 +10,7 @@ const LABEL: Record<string, string> = { PROPERTY_ADMIN: "Property Admin", PROPER
 const ACCEPT = "application/pdf,image/jpeg,image/png,image/webp";
 
 export default function CreateUserForm({ roles }: { roles: string[] }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -33,7 +33,7 @@ export default function CreateUserForm({ roles }: { roles: string[] }) {
     }
     toast(`${LABEL[body.role] ?? "Account"} created for ${body.name}`);
     setFormKey((k) => k + 1);
-    router.refresh();
+    refresh();
   }
 
   return (

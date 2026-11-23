@@ -29,8 +29,9 @@ export default async function Dashboard() {
   const issueWhere = issueScope(me);
   const openWhere = { ...issueWhere, status: { in: ["OPEN", "IN_PROGRESS"] as ("OPEN" | "IN_PROGRESS")[] } };
 
-  const [user, properties, allocations, openCount, openIssues, verification] = await Promise.all([
-    prisma.user.findUnique({ where: { id: me.id }, include: { ownerProfile: true } }),
+  const [profile, properties, allocations, openCount, openIssues, verification] = await Promise.all([
+    // `me` is already the full user row, so only the owner profile is fetched here (not the user a second time)
+    prisma.ownerProfile.findUnique({ where: { userId: me.id } }),
     prisma.property.findMany({
       where: propWhere,
       select: { id: true, name: true, type: true, city: true, status: true, ownerId: true, coOwners: { select: { userId: true } } },
@@ -46,7 +47,6 @@ export default async function Dashboard() {
     }),
     getVerificationStatus(me.id),
   ]);
-  const profile = user?.ownerProfile;
   const base = propertiesBase(me.role);
   const canAdd = !isManager && canManageProperties(me.role, verification);
   const live = properties.filter((p) => p.status === "APPROVED").length;
@@ -82,7 +82,7 @@ export default async function Dashboard() {
             <p className="mt-2 text-sm text-muted-foreground">{STATUS_HELP[profile.verificationStatus]}</p>
             {profile.verificationStatus === "CONTACT_PENDING" && (
               <ul className="mt-3 space-y-1 text-sm">
-                <li>Email: {user?.emailVerifiedAt ? "verified" : "not verified yet"}</li>
+                <li>Email: {me.emailVerifiedAt ? "verified" : "not verified yet"}</li>
                 {SMS_VERIFICATION_ENABLED && <li>Mobile: {profile.phoneVerifiedAt ? "verified" : "not verified yet"}</li>}
               </ul>
             )}
@@ -92,7 +92,7 @@ export default async function Dashboard() {
               </p>
             )}
             <VerificationActions
-              needsEmail={profile.verificationStatus === "CONTACT_PENDING" && !user?.emailVerifiedAt}
+              needsEmail={profile.verificationStatus === "CONTACT_PENDING" && !me.emailVerifiedAt}
               needsDocument={profile.verificationStatus === "NEEDS_MORE_INFO"}
             />
             {me.role === "PROPERTY_ADMIN" && profile.verificationStatus !== "VERIFIED" && (

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Building2, BedDouble, ChevronDown, Users, Wallet } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getSessionUser } from "@/lib/current-user";
 import { canOperateProperty } from "@/lib/property-access";
 import { propertiesBase } from "@/lib/routes";
 import { AdminShell, Panel } from "@/components/admin/AdminShell";
@@ -11,7 +11,7 @@ import BuildingAllocationForm, { type BuildingFloor } from "./building-allocatio
 import SharedPersons from "./shared-persons";
 import { splitMain } from "@/lib/main-tenant";
 import BuildingResidentsTable, { type BuildingResidentRow } from "./building-residents-table";
-import BuildingHistory, { type HistoryRow } from "./building-history";
+import BuildingHistory from "./building-history";
 import AllocationActions from "./allocation-actions";
 import RoomOccupants, { type OccupantFloor } from "./room-occupants";
 import AvailabilityManager from "./availability-manager";
@@ -23,7 +23,7 @@ const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 const catName = (c: { capacity: number; ac: boolean }) => `${c.capacity}-seater${c.ac ? " AC" : ""}`;
 
 export default async function PropertyRoomsPage({ params }: { params: Promise<{ id: string }> }) {
-  const me = await getCurrentUser();
+  const me = await getSessionUser();
   if (!me) redirect("/login");
 
   const { id } = await params;
@@ -51,25 +51,9 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
   // PG and flats rented room by room are handled by room category. A flat rented as a whole has no room-wise view.
   const isBuilding = property.type === "BUILDING";
 
-  // ---- Building tenant history: everyone who checked out, from the values saved when they lived here ----
-  const fmt = (d: Date) => d.toLocaleDateString("en-IN");
-  let historyRows: HistoryRow[] = [];
-  if (isBuilding) {
-    const past = await prisma.allocation.findMany({
-      where: { status: "CHECKED_OUT", room: { propertyId: property.id } },
-      include: { room: { select: { label: true, floor: true, bedrooms: true } }, _count: { select: { documents: true } } },
-      orderBy: [{ moveOutDate: "desc" }, { updatedAt: "desc" }],
-    });
-    historyRows = past.map((a) => {
-      const out = a.moveOutDate ?? a.updatedAt;
-      const together = past.filter((b) => b.roomId === a.roomId && b.moveInDate <= out && (b.moveOutDate ?? b.updatedAt) >= a.moveInDate).length;
-      return {
-        id: a.id, name: a.fullName, phone: a.phone, email: a.email, role: a.isHousemate ? "Housemate" : "Main tenant",
-        floor: a.floorNumber ?? a.room.floor ?? 0, flat: a.roomLabel ?? a.room.label, bhk: a.roomBhk ?? a.room.bedrooms,
-        people: together, rent: a.monthlyRent, deposit: a.securityDeposit, moveIn: fmt(a.moveInDate), moveOut: fmt(out), docs: a._count.documents,
-      };
-    });
-  }
+  // Tenant history is not loaded with the page. Only the number is counted here (for the button);
+  // the popup fetches one floor and one page at a time from /api/properties/[id]/history.
+  const historyCount = isBuilding ? await prisma.allocation.count({ where: { status: "CHECKED_OUT", room: { propertyId: property.id } } }) : 0;
   const byCategory = (isPg || property.sharing) && !isBuilding;
   // Inactive rooms / flats (e.g. under construction) don't count as capacity and can't be allocated
   const liveRooms = property.rooms.filter((r) => r.isActive);
@@ -388,7 +372,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                   <h2 className="text-lg font-semibold">Building residents</h2>
                   <p className="text-sm text-muted-foreground">Main tenant of each flat, floor by floor.</p>
                 </div>
-                <BuildingHistory rows={historyRows} />
+                <BuildingHistory propertyId={property.id} count={historyCount} />
               </div>
               <BuildingResidentsTable floors={floorNos} rows={tableRows} />
             </Panel>

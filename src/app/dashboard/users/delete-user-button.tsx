@@ -1,13 +1,13 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 
 export default function DeleteUserButton({ id, name, deletesManagers, }: {
   id: string;
   name: string;
   deletesManagers: boolean;
 }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -24,7 +24,7 @@ export default function DeleteUserButton({ id, name, deletesManagers, }: {
       res = await send();
     }
     if (res.ok) {
-      router.refresh();
+      refresh();
     } else {
       setError((await res.json()).error ?? "Could not delete this account.");
       setBusy(false);

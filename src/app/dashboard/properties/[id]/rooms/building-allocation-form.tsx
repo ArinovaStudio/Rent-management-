@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { Check, Copy, FileText, Loader2, Plus, UploadCloud, UserPlus, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
 
@@ -19,7 +19,7 @@ const lbl = "flex flex-col gap-2 text-sm";
 // Allocation for a Building. The tenant is entered once and can take several flats (on any floors) in one go;
 // every flat still becomes its own independent allocation. A shareable flat also collects its other residents.
 export default function BuildingAllocationForm({ propertyId, floors }: { propertyId: string; floors: BuildingFloor[] }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -95,7 +95,7 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
     if (!res.ok) return setError(body.error ?? "Could not allocate.");
     setLinks((body.links ?? []).map((l: { name: string; flat: string; url: string }) => ({ ...l, url: `${window.location.origin}${l.url}` })));
     setDone(true);
-    router.refresh();
+    refresh();
   }
 
   const modal = (

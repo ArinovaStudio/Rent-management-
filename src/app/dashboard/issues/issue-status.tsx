@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { authFetch } from "@/lib/fetch-auth";
 
 export default function IssueStatus({ id, status, note }: { id: string; status: string; note: string }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [s, setS] = useState(status);
   const [n, setN] = useState(note);
   const [error, setError] = useState("");
@@ -21,7 +21,7 @@ export default function IssueStatus({ id, status, note }: { id: string; status: 
     const body = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) return setError(body.error ?? "Something went wrong.");
-    router.refresh();
+    refresh();
   }
 
   return (

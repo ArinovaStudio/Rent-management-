@@ -580,8 +580,8 @@ model ResidentBill {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  @@unique([allocationId, type, period])
   @@index([allocationId])
+  @@index([allocationId, type, period])
 }
 
 // Rent paid / unpaid per month for a main tenant. Managers set it from the Payment Ledger.

@@ -1,13 +1,13 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { authFetch } from "@/lib/fetch-auth";
 import { Panel } from "@/components/admin/AdminShell";
 
 type CoOwner = { userId: string; name: string; email: string; documents: number };
 
 export default function CoOwnerManager({ propertyId, coOwners }: { propertyId: string; coOwners: CoOwner[] }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -25,7 +25,7 @@ export default function CoOwnerManager({ propertyId, coOwners }: { propertyId: s
       setError((await res.json().catch(() => ({}))).error ?? "Something went wrong.");
       return false;
     }
-    router.refresh();
+    refresh();
     return true;
   };
 

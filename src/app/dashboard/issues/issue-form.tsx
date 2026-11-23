@@ -1,12 +1,12 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { authFetch } from "@/lib/fetch-auth";
 
 type P = { id: string; name: string; rooms: { id: string; label: string }[] };
 
 export default function IssueForm({ properties }: { properties: P[] }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [propertyId, setPropertyId] = useState(properties[0].id);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,7 +32,7 @@ export default function IssueForm({ properties }: { properties: P[] }) {
     setBusy(false);
     if (!res.ok) return setError(body.error ?? "Something went wrong.");
     form.reset();
-    router.refresh();
+    refresh();
   }
 
   const lbl = "grid gap-1.5 text-sm";

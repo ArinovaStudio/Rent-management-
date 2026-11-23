@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { ArrowLeft, Bath as BathIcon, BedDouble, ChevronLeft, ChevronRight, FileText, ImagePlus, MapPin, Maximize, Plus, Star, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
 import MapPicker, { MAP_UPDATE_EVENT } from "./map-picker";
@@ -67,6 +68,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   listedBy?: ListedBy | null;
 }) {
   const router = useRouter();
+  const refresh = useSoftRefresh();
   const editing = !!initial;
   const single = initial?.rooms[0];
 
@@ -319,7 +321,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     const body = await res.json().catch(() => ({}));
     if (res.ok) {
       router.push(`${base}?saved=${body.status === "PENDING" ? "pending" : "live"}`);
-      router.refresh();
+      refresh();
     } else {
       stop(body.error ?? "Something went wrong.");
     }

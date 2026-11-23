@@ -1,14 +1,15 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { fmtDate, monthLabel, nextRentDue } from "@/lib/bills";
+import { fmtDate, monthLabel, rentDueDate, rentPeriod } from "@/lib/bills";
 import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
 import { RENT_TERMS, payeeFor, propertyLines, type InvoiceData } from "@/lib/invoice";
 import InvoiceView from "../invoice-view";
 import { isWholeUnit } from "@/lib/occupancy";
 import { amenityCharges } from "@/lib/amenity-charges";
 
-export default async function RentPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function RentPage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ period?: string }> }) {
   const { token } = await params;
+  const sp = await searchParams;
   const a = await prisma.allocation.findUnique({
     where: { accessToken: token },
     include: { room: { include: { property: true } } },
@@ -16,10 +17,13 @@ export default async function RentPage({ params }: { params: Promise<{ token: st
   if (!a) notFound();
   const property = a.room.property;
 
-  const amenity = a.monthlyRent > 0 ? amenityCharges(property) : { list: [], total: 0 };
-  const due = nextRentDue(a.moveInDate);
-  const period = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}`;
+  // Current month by default; ?period= opens the invoice of an earlier month
+  const period = sp.period && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.period) ? sp.period : rentPeriod();
+  const due = rentDueDate(a.moveInDate, period);
   const paidRow = await prisma.rentPayment.findUnique({ where: { allocationId_period: { allocationId: a.id, period } } });
+  // A month that has a saved payment keeps the rent it had then, whatever the rent is now
+  const rentAmount = paidRow ? paidRow.amount : a.monthlyRent;
+  const amenity = a.monthlyRent > 0 && !paidRow?.paid ? amenityCharges(property) : { list: [], total: 0 };
   const category = a.roomCategory ?? roomCategoryLabel(property, a.room);
   const floor = a.floorNumber ?? roomFloor(property, a.room);
   const household = isWholeUnit(property)
@@ -41,7 +45,7 @@ export default async function RentPage({ params }: { params: Promise<{ token: st
     },
     issueDate: fmtDate(new Date()),
     dueDate: fmtDate(due),
-    items: [{ title: `Monthly rent · ${monthLabel(period)}`, description: `${category} · ${a.room.label}`, rate: a.monthlyRent, taxPct: 0 }, ...amenity.list.map((x) => ({ title: `${x.name} charge`, description: "Amenity · monthly", rate: x.charge, taxPct: 0 }))],
+    items: [{ title: `Monthly rent · ${monthLabel(period)}`, description: `${category} · ${a.room.label}`, rate: rentAmount, taxPct: 0 }, ...amenity.list.map((x) => ({ title: `${x.name} charge`, description: "Amenity · monthly", rate: x.charge, taxPct: 0 }))],
     terms: RENT_TERMS,
     backHref: `/resident/${token}`,
     splitPeople: household,

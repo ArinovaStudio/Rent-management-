@@ -1,8 +1,8 @@
 "use client";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 
 export default function AllocationActions({ allocationId, residentUrl, housemate = false }: { allocationId: string; residentUrl: string; housemate?: boolean }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
 
   async function checkout() {
     if (!window.confirm("Check this resident out? Their bed will become available.")) return;
@@ -13,7 +13,7 @@ export default function AllocationActions({ allocationId, residentUrl, housemate
       res = await send();
     }
     if (res.ok) {
-      router.refresh();
+      refresh();
     } else {
       alert((await res.json().catch(() => ({}))).error ?? "Could not check out resident.");
     }

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { Check, Receipt, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
 
@@ -13,7 +13,7 @@ const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 const lbl = "grid gap-1.5 text-sm";
 
 export default function GenerateBill({ rooms }: { rooms: BillRoom[] }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -52,7 +52,7 @@ export default function GenerateBill({ rooms }: { rooms: BillRoom[] }) {
     setBusy(false);
     if (!res.ok) return setError(data.error ?? "Something went wrong.");
     setDone(amount);
-    router.refresh();
+    refresh();
   }
 
   const modal = (

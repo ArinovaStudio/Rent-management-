@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { authFetch } from "@/lib/fetch-auth";
 
 const btn = "rounded-full bg-primary px-5 py-2 text-sm text-primary-foreground hover:bg-ink disabled:opacity-60";
@@ -9,7 +9,7 @@ const lbl = "grid gap-1.5 text-sm";
 
 // Actions shown inside the dashboard verification banner.
 export default function VerificationActions({ needsEmail, needsDocument }: { needsEmail: boolean; needsDocument: boolean }) {
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [sent, setSent] = useState(false);
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState("");
@@ -51,7 +51,7 @@ export default function VerificationActions({ needsEmail, needsDocument }: { nee
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ code }),
-                    })) && router.refresh()
+                    })) && refresh()
                   }
                 >
                   Verify email
@@ -70,7 +70,7 @@ export default function VerificationActions({ needsEmail, needsDocument }: { nee
           onSubmit={async (e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
-            if (await call("/api/owner-documents", { method: "POST", body: fd })) router.refresh();
+            if (await call("/api/owner-documents", { method: "POST", body: fd })) refresh();
           }}
         >
           <label className={`${lbl} max-w-xs`}>

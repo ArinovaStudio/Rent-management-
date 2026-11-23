@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { Check, Copy, FileText, Loader2, Plus, UploadCloud, UserPlus, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
 
@@ -24,7 +24,7 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
   whole?: WholeFlat;
 }) {
   const isPg = mode === "category";
-  const router = useRouter();
+  const refresh = useSoftRefresh();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -104,7 +104,7 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
     if (!res.ok) return setError(body.error ?? "Could not allocate this person.");
     if (body.housemate) setSharedDone(true);
     else setResidentUrl(`${window.location.origin}${body.residentUrl}`);
-    router.refresh();
+    refresh();
   }
 
   const lbl = "flex flex-col gap-2 text-sm";

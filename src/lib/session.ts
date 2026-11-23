@@ -12,7 +12,7 @@ const REFRESH_MAX_AGE = 7 * 24 * 60 * 60;
 const sha256 = (v: string) => crypto.createHash("sha256").update(v).digest("hex");
 const secure = process.env.NODE_ENV === "production";
 
-type SessionUser = { id: string; role: Role };
+type SessionUser = { id: string; role: Role; name?: string };
 type Tx = Prisma.TransactionClient | typeof prisma;
 
 // Creates a refresh token row (only its hash is stored) and returns the raw token
@@ -30,7 +30,7 @@ export async function createRefreshToken(db: Tx, userId: string, familyId: strin
 }
 
 export async function setAuthCookies(res: NextResponse, user: SessionUser, refreshToken: string) {
-  res.cookies.set(ACCESS_COOKIE, await signAccessToken(user.id, user.role), {
+  res.cookies.set(ACCESS_COOKIE, await signAccessToken(user.id, user.role, user.name), {
     httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: ACCESS_MAX_AGE,
   });
   // Refresh cookie is only sent to /api/auth/*
@@ -79,7 +79,7 @@ export async function rotateSession(res: NextResponse, presented: string): Promi
   });
   if (!next) return false;
 
-  await setAuthCookies(res, { id: row.user.id, role: row.user.role }, next);
+  await setAuthCookies(res, { id: row.user.id, role: row.user.role, name: row.user.name }, next);
   return true;
 }
 

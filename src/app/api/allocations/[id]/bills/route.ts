@@ -15,7 +15,7 @@ async function load(id: string) {
   return { me, allocation };
 }
 
-// Sets one bill for a month: creates it, or updates it if that month already has one
+// Generates a new bill. Older bills are never replaced.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const g = await load(id);
@@ -33,15 +33,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "Enter the bill amount in whole rupees." }, { status: 400 });
   }
 
-  const key = { allocationId_type_period: { allocationId: id, type, period } };
-  const existing = await prisma.residentBill.findUnique({ where: key, select: { paid: true, paidAt: true } });
+  // Every generated bill is its own record, so earlier bills stay in the resident's history
   const paid = b.paid === true;
-  // Keep the original payment date if the bill was already paid
-  const paidAt = paid ? (existing?.paid ? existing.paidAt ?? new Date() : new Date()) : null;
-  const bill = await prisma.residentBill.upsert({
-    where: key,
-    create: { allocationId: id, type, period, amount, note: note || null, paid, paidAt, createdById: g.me.id },
-    update: { amount, note: note || null, paid, paidAt },
+  const bill = await prisma.residentBill.create({
+    data: { allocationId: id, type, period, amount, note: note || null, paid, paidAt: paid ? new Date() : null, createdById: g.me.id },
   });
   return NextResponse.json(bill, { status: 201 });
 }

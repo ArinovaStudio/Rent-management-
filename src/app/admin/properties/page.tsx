@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getSessionUser } from "@/lib/current-user";
 import { canManageProperties } from "@/lib/permissions";
 import { getVerificationStatus } from "@/lib/owner-status";
 import { propertiesBase } from "@/lib/routes";
@@ -16,7 +16,7 @@ const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "R
 const pill = "rounded-full bg-cream px-4 py-2 text-sm hover:bg-cream/70";
 
 export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
-  const me = await getCurrentUser();
+  const me = await getSessionUser();
   if (!me) redirect("/login");
 
   const isManager = me.role === "PROPERTY_MANAGER";

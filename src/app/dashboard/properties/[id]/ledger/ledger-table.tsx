@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
 import { Bell, ChevronLeft, ChevronRight, Pencil, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
 import { BILL_LABEL, monthLabel } from "@/lib/bills";
@@ -41,8 +40,11 @@ function Modal({ title, sub, onClose, children }: { title: string; sub?: string;
 }
 
 // Rent and bill status of every main tenant, one tab per floor.
-export default function LedgerTable({ floors, rows, period }: { floors: number[]; rows: LedgerRow[]; period: string }) {
-  const router = useRouter();
+export default function LedgerTable({ floors, rows: serverRows, period }: { floors: number[]; rows: LedgerRow[]; period: string }) {
+  // Rows live in local state. A status change updates this state right away instead of asking the server to
+  // re-render the whole page; a new month (new props) replaces it.
+  const [rows, setRows] = useState(serverRows);
+  useEffect(() => setRows(serverRows), [serverRows]);
   const [floor, setFloor] = useState(floors[0] ?? 0);
   const [page, setPage] = useState(1);
   const [billsFor, setBillsFor] = useState<string | null>(null);
@@ -59,20 +61,24 @@ export default function LedgerTable({ floors, rows, period }: { floors: number[]
   const billsRow = rows.find((r) => r.id === billsFor);
   const editRow = rows.find((r) => r.id === editFor);
 
-  async function call(key: string, url: string, init: RequestInit, done?: string) {
+  async function call(key: string, url: string, init: RequestInit, done?: string, apply?: () => void) {
     setBusy(key);
     setMsg(null);
     const res = await authFetch(url, { ...init, headers: { "Content-Type": "application/json" } });
     const body = await res.json().catch(() => ({}));
     setBusy("");
     setMsg({ ok: res.ok, text: body.message ?? (res.ok ? done ?? "Saved." : body.error ?? "Something went wrong.") });
-    if (res.ok) router.refresh();
+    if (res.ok) apply?.();
     return res.ok;
   }
+  const today = () => new Date().toLocaleDateString("en-IN");
+  const patchRow = (id: string, fn: (r: LedgerRow) => LedgerRow) => setRows((all) => all.map((r) => (r.id === id ? fn(r) : r)));
   const setRent = (r: LedgerRow, paid: boolean) =>
-    call(`rent-${r.id}`, `/api/allocations/${r.id}/rent`, { method: "POST", body: JSON.stringify({ period, paid }) }, "Rent status updated.");
+    call(`rent-${r.id}`, `/api/allocations/${r.id}/rent`, { method: "POST", body: JSON.stringify({ period, paid }) }, "Rent status updated.",
+      () => patchRow(r.id, (x) => ({ ...x, rentPaid: paid, rentPaidOn: paid ? today() : null })));
   const setBill = (r: LedgerRow, billId: string, paid: boolean) =>
-    call(`bill-${billId}`, `/api/allocations/${r.id}/bills`, { method: "PATCH", body: JSON.stringify({ billId, paid }) }, "Bill status updated.");
+    call(`bill-${billId}`, `/api/allocations/${r.id}/bills`, { method: "PATCH", body: JSON.stringify({ billId, paid }) }, "Bill status updated.",
+      () => patchRow(r.id, (x) => ({ ...x, bills: x.bills.map((b) => (b.id === billId ? { ...b, paid, paidOn: paid ? today() : null } : b)) })));
   const notifyRent = (r: LedgerRow) =>
     call(`nr-${r.id}`, `/api/allocations/${r.id}/notify`, { method: "POST", body: JSON.stringify({ kind: "RENT", period }) });
   const notifyBill = (r: LedgerRow, billId: string) =>
