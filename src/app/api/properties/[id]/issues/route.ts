@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAssignedManager, isVerifiedManager } from "@/lib/property-access";
 import { checkFile, removeFile, saveFile } from "@/lib/uploads";
-import { CATEGORIES, CATEGORY_LABEL, PRIORITIES, notifyEmails } from "@/lib/issues";
+import { CATEGORIES, CATEGORY_LABEL, PRIORITIES, makeTicketCode, notifyEmails, ticketLabel } from "@/lib/issues";
 
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status });
 const MAX_PHOTOS = 3;
@@ -61,6 +61,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!a) return fail("Choose a resident from this property.");
     roomId = roomId ?? a.roomId;
   }
+  // The room's floor, number and type go into the ticket number
+  const room = roomId ? await prisma.room.findUnique({ where: { id: roomId }, select: { label: true, floor: true, roomType: true, capacity: true } }) : null;
 
   const photos = fd.getAll("photos").filter((f): f is File => f instanceof File && f.size > 0);
   if (photos.length > MAX_PHOTOS) return fail(`Add up to ${MAX_PHOTOS} photos.`);
@@ -73,16 +75,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   let issue;
   try {
-    issue = await prisma.issue.create({
+    // A random 8-digit part makes a clash very unlikely; if one happens the unique check fails and we try a new number.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        issue = await prisma.issue.create({
       data: {
+        ticketCode: makeTicketCode({ propertyName: property.name, category, room }),
         propertyId, roomId, allocationId, reportedById: me.id, title, description,
         category: category as never, priority: priority as never, neededBy, images,
         recipientId: toId === property.ownerId ? null : toId,
         // a ticket sent to a Super Admin has no Property Admin in between
         escalatedAt: recipient.role === "SUPER_ADMIN" ? new Date() : null,
       },
-      select: { id: true, ticketNo: true },
-    });
+      select: { id: true, ticketNo: true, ticketCode: true },
+        });
+        break;
+      } catch (e) {
+        if ((e as { code?: string }).code !== "P2002" || attempt >= 4) throw e;
+      }
+    }
   } catch {
     await Promise.all(images.map(removeFile));
     return fail("Could not raise the issue. Try again.", 500);
@@ -90,7 +101,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   await notifyEmails(
     [recipient.email, property.owner.email],
-    `New issue #${issue.ticketNo} at "${property.name}": ${title}`,
+    `New issue ${ticketLabel(issue)} at "${property.name}": ${title}`,
     `${me.name} raised an issue (${priority.toLowerCase()} priority, ${CATEGORY_LABEL[category as keyof typeof CATEGORY_LABEL]}):\n\n${title}\n\n${description}\n\nSign in and open Issues to respond.`
   );
   return NextResponse.json(issue, { status: 201 });

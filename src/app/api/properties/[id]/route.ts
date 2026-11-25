@@ -228,3 +228,68 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   
   return NextResponse.json({ id, status: review.status });
 }
+
+
+// Deletes a property for good, with its rooms, residents' history, bills, tickets and uploaded files.
+// Only the Super Admin or the property's owner. It is blocked while anyone is still living there, and the caller
+// must send the property's exact name as { confirm } so a stray request can't delete it.
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+
+  const { id } = await params;
+  const property = await prisma.property.findUnique({
+    where: { id },
+    include: {
+      images: { select: { path: true } },
+      documents: { select: { path: true } },
+      categoryMedia: { select: { path: true } },
+      authorityProof: { select: { path: true } },
+      rooms: { select: { images: true } },
+      coOwners: { select: { documents: { select: { path: true } } } },
+    },
+  });
+  if (!property) return NextResponse.json({ error: "Property not found." }, { status: 404 });
+  if (!canEditProperty(me, property)) return NextResponse.json({ error: "You can't delete this property." }, { status: 403 });
+
+  const b = await req.json().catch(() => ({}));
+  if (typeof b.confirm !== "string" || b.confirm.trim() !== property.name.trim()) {
+    return NextResponse.json({ error: "Type the property name exactly to confirm." }, { status: 400 });
+  }
+
+  const living = await prisma.allocation.count({ where: { status: "ACTIVE", room: { propertyId: id } } });
+  if (living > 0) {
+    return NextResponse.json({ error: `${living} ${living === 1 ? "resident is" : "residents are"} still living here. Check them out first, then delete the property.` }, { status: 409 });
+  }
+
+  // Collect every file path before the rows disappear
+  const [issues, residentDocs] = await Promise.all([
+    prisma.issue.findMany({ where: { propertyId: id }, select: { images: true } }),
+    prisma.residentDocument.findMany({ where: { allocation: { room: { propertyId: id } } }, select: { path: true } }),
+  ]);
+  const publicFiles = [
+    ...property.images.map((f) => f.path),
+    ...property.documents.map((f) => f.path),
+    ...property.categoryMedia.map((f) => f.path),
+    ...property.rooms.flatMap((r) => (Array.isArray(r.images) ? (r.images as string[]) : [])),
+    ...issues.flatMap((i) => (Array.isArray(i.images) ? (i.images as string[]) : [])),
+    ...residentDocs.map((f) => f.path),
+    ...(property.videoPath ? [property.videoPath] : []),
+  ];
+  const privateFiles = [...(property.authorityProof ? [property.authorityProof.path] : []), ...property.coOwners.flatMap((c) => c.documents.map((d) => d.path))];
+
+  try {
+    await prisma.$transaction([
+      prisma.auditEvent.create({
+        data: { subjectType: "PROPERTY", subjectId: id, actorId: me.id, action: "DELETE", fromStatus: property.status, toStatus: "DELETED", note: property.name },
+      }),
+      prisma.property.delete({ where: { id } }),
+    ]);
+  } catch {
+    return NextResponse.json({ error: "Could not delete this property. Try again." }, { status: 500 });
+  }
+
+  // Files are removed only after the database delete went through
+  await Promise.all([...publicFiles.map(removeFile), ...privateFiles.map(removeSensitiveFile)]);
+  return NextResponse.json({ ok: true });
+}

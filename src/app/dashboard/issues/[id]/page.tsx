@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip } from "@/app/admin/ui";
-import { CATEGORY_LABEL, PRIORITY_LABEL, ROLE_LABEL, STATUS_LABEL, canSeeIssue, canUpdateIssue, priorityTone, statusTone, withWho } from "@/lib/issues";
+import { CATEGORY_LABEL, PRIORITY_LABEL, ROLE_LABEL, STATUS_LABEL, canSeeIssue, canUpdateIssue, priorityTone, statusTone, ticketLabel, withWho } from "@/lib/issues";
 import TicketActions from "./ticket-actions";
 
 const fmt = (d: Date) => d.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
@@ -41,7 +41,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
   return (
     <AdminShell role={me.role} name={name}>
       <Link href="/dashboard/issues" className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" />All issues</Link>
-      <PageHeader title={`#${issue.ticketNo} · ${issue.title}`} sub={`${issue.property.name}${issue.room ? ` · ${issue.room.label}` : ""}`} />
+      <PageHeader title={`${ticketLabel(issue)} · ${issue.title}`} sub={`${issue.property.name}${issue.room ? ` · ${issue.room.label}` : ""}`} />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="space-y-6">

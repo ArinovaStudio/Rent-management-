@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip } from "@/app/admin/ui";
-import { CATEGORY_LABEL, PRIORITY_LABEL, ROLE_LABEL, STATUS_LABEL, issueScope, priorityTone, statusTone, withWho } from "@/lib/issues";
+import { CATEGORY_LABEL, PRIORITY_LABEL, ROLE_LABEL, STATUS_LABEL, issueScope, priorityTone, statusTone, ticketLabel, withWho } from "@/lib/issues";
 import RaiseIssue, { type RaiseProperty } from "./raise-issue";
 
 const FILTERS = [["open", "Open"], ["escalated", "With Super Admin"], ["closed", "Resolved"], ["all", "All"]] as const;
@@ -86,7 +86,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
                 <Panel className="transition-colors hover:bg-cream/40">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h2 className="text-lg font-semibold"><span className="text-muted-foreground">#{i.ticketNo}</span> {i.title}</h2>
+                      <h2 className="text-lg font-semibold"><span className="text-muted-foreground">{ticketLabel(i)}</span> {i.title}</h2>
                       <p className="text-sm text-muted-foreground">
                         {i.property.name}{i.room ? ` · ${i.room.label}` : ""} · {CATEGORY_LABEL[i.category]} · by {i.reportedBy.name} · {fmt(i.createdAt)}
                       </p>

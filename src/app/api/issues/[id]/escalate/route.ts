@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-import { canUpdateIssue, notifyEmails, superAdminEmails } from "@/lib/issues";
+import { canUpdateIssue, notifyEmails, superAdminEmails, ticketLabel } from "@/lib/issues";
 
 // The Property Admin who owns the property passes the ticket on to the Super Admin.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -31,7 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   await notifyEmails(
     [...(await superAdminEmails()), issue.reportedBy.email],
-    `Ticket #${issue.ticketNo} escalated: ${issue.title}`,
+    `Ticket ${ticketLabel(issue)} escalated: ${issue.title}`,
     `${me.name} escalated the ticket at "${issue.property.name}" to the Super Admin.${note ? `\n\nNote: ${note}` : ""}`
   );
   return NextResponse.json({ ok: true });

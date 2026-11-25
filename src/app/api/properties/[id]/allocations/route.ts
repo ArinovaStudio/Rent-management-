@@ -16,7 +16,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const property = await prisma.property.findUnique({ where: { id: propertyId } });
   if (!property || !(await canOperateProperty(me, property))) return fail("You can't manage this property.", 403);
 
-  if (!property.isActive) return fail("This property is marked inactive (for example under construction). Mark it active before allocating residents.");
+  if (!property.isActive) return fail("This property is marked inactive (for example under construction). Switch it On before allocating residents.");
 
   const fd = await req.formData().catch(() => null);
   if (!fd) return fail("Invalid form data.");

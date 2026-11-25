@@ -164,7 +164,8 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
             propertyActive={property.isActive}
             propertyNote={property.inactiveNote}
             roomWord={isBuilding ? "flat" : byCategory ? "room" : null}
-            rooms={property.rooms.map((r) => ({ id: r.id, label: r.label, floor: r.floor ?? null, active: r.isActive, note: r.inactiveNote, living: r.allocations.length }))}
+            byCategory={isPg}
+            rooms={property.rooms.map((r) => ({ id: r.id, label: r.label, floor: r.floor ?? null, capacity: r.capacity, ac: r.ac, active: r.isActive, note: r.inactiveNote, living: r.allocations.length }))}
           />
           <GenerateBill rooms={billRooms} />
         </div>
@@ -173,7 +174,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
       <div className="space-y-6">
         {!property.isActive && (
           <p className="rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">
-            This property is inactive{property.inactiveNote ? ` (${property.inactiveNote})` : ""}. New allocations are blocked until you mark it active.
+            This property is inactive{property.inactiveNote ? ` (${property.inactiveNote})` : ""}. New allocations are blocked until you switch it On in Availability.
           </p>
         )}
         {/* Summary */}

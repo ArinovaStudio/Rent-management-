@@ -386,6 +386,8 @@ model Allocation {
   documents       ResidentDocument[]
   bills           ResidentBill[]
   rentPayments    RentPayment[]
+  // Tax % per invoice line for this tenant: { "RENT": 5, "AMENITY:Gym": 18 }. Missing = 0%.
+  taxRates        Json             @default("{}")
 
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
@@ -412,6 +414,8 @@ model EmailOtp {
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   codeHash   String
+  // VERIFY = confirm the email address, PASSWORD = authorise a password change
+  purpose    String    @default("VERIFY")
   expiresAt  DateTime
   attempts   Int       @default(0)
   consumedAt DateTime?
@@ -528,6 +532,8 @@ model Issue {
   // Ticket details. A manager raises it; it goes to the property's owner (Property Admin) and
   // can be escalated to the Super Admin (escalatedAt set). Tickets on a Super Admin's own property start escalated.
   ticketNo       Int           @unique @default(autoincrement())
+  // Long random ticket number shown to people, e.g. SUN-F02-R204-S3-PLM-48291037 (old tickets have none and show #ticketNo)
+  ticketCode     String?       @unique
   category       IssueCategory @default(OTHER)
   allocationId   String?
   allocation     Allocation?   @relation(fields: [allocationId], references: [id], onDelete: SetNull)
@@ -574,6 +580,8 @@ model ResidentBill {
   period       String // "2026-11"
   amount       Int // rupees
   note         String?
+  // Tax % on this bill. `amount` stays the amount before tax.
+  taxPct       Float      @default(0)
   paid         Boolean    @default(false)
   paidAt       DateTime?
   createdById  String
@@ -591,6 +599,7 @@ model RentPayment {
   allocation   Allocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
   period       String // "2026-11"
   amount       Int // rent that month, saved when the status is set
+  taxPct       Float      @default(0) // rent tax % saved when the month is marked paid
   paid         Boolean    @default(false)
   paidAt       DateTime?
   updatedById  String?

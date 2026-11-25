@@ -2,7 +2,7 @@
 import { type ReactNode, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertCircle, Building2, ClipboardCheck, Contact, Inbox, LayoutDashboard, LogOut, Mail, PanelLeft, ShieldCheck, Users } from "lucide-react";
+import { AlertCircle, Building2, ClipboardCheck, Contact, Inbox, LayoutDashboard, LogOut, Mail, PanelLeft, ShieldCheck, UserCircle, Users } from "lucide-react";
 import { propertiesBase } from "@/lib/routes";
 import QueuePopup from "./QueuePopup";
 import Toaster from "./Toaster";
@@ -19,6 +19,7 @@ const NAV: Item[] = [
   { title: "Users", url: "/dashboard/users", icon: Users, hideFor: ["PROPERTY_MANAGER"] },
   { title: "My requests", url: "/dashboard/requests", icon: Inbox, hideFor: ["SUPER_ADMIN", "PROPERTY_MANAGER"] },
   { title: "Issues", url: "/dashboard/issues", icon: AlertCircle },
+  { title: "Profile", url: "/dashboard/profile", icon: UserCircle },
   { title: "Property approvals", url: "/admin/approvals", icon: ClipboardCheck, superOnly: true },
   { title: "KYC reviews", url: "/admin/kyc", icon: ShieldCheck, superOnly: true },
   { title: "Enquiries", url: "#", icon: Inbox, soon: true },

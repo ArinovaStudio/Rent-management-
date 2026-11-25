@@ -11,11 +11,13 @@ import { amenityCharges } from "@/lib/amenity-charges";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip, toneFor } from "@/app/admin/ui";
 import RaiseIssue from "../issues/raise-issue";
+import ActiveToggle from "@/components/admin/ActiveToggle";
+import DeletePropertyButton from "@/components/admin/DeletePropertyButton";
 
 const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment", BUILDING: "Building" } as const;
 const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
 
-const pill = "rounded-full bg-cream px-4 py-2 text-sm hover:bg-cream/70";
+const pill = "rounded-full bg-background px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-black/15 transition-colors hover:bg-primary hover:text-primary-foreground hover:ring-primary";
 
 export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
   const me = await getSessionUser();
@@ -83,7 +85,10 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                       {isCoOwner && " · Co-owner access"}
                     </p>
                   </div>
-                  <Chip tone={toneFor(p.status)}>{STATUS_LABEL[p.status]}</Chip>
+                  <div className="flex items-center gap-3">
+                    {!isCoOwner && <ActiveToggle propertyId={p.id} active={p.isActive} />}
+                    <Chip tone={toneFor(p.status)}>{STATUS_LABEL[p.status]}</Chip>
+                  </div>
                 </div>
 
                 <div className="mt-4">
@@ -126,6 +131,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                     ? <Link className={pill} href={`${base}/${p.id}/co-owner-documents`}>Submit co-owner proof documents</Link>
                     : <Link className={pill} href={`${base}/${p.id}/rooms`}>Room status & allocations</Link>}
                   {!isCoOwner && <Link className={pill} href={`${base}/${p.id}/ledger`}>Payment ledger</Link>}
+                  {!isManager && !isCoOwner && <DeletePropertyButton propertyId={p.id} propertyName={p.name} />}
                 </div>
               </Panel>
             );

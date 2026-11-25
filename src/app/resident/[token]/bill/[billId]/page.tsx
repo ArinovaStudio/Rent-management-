@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { BILL_LABEL, billDueDate, fmtDate, monthLabel } from "@/lib/bills";
 import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
 import { BILL_TERMS, payeeFor, propertyLines, type InvoiceData } from "@/lib/invoice";
+import { getSessionUser } from "@/lib/current-user";
+import { canOperateProperty } from "@/lib/property-access";
 import InvoiceView from "../../invoice-view";
 import { isWholeUnit } from "@/lib/occupancy";
 
@@ -20,6 +22,9 @@ export default async function BillPage({ params }: { params: Promise<{ token: st
   const household = isWholeUnit(property)
     ? await prisma.allocation.count({ where: { roomId: a.roomId, status: "ACTIVE" } })
     : a.occupants;
+  // Staff (not the resident) can change the tax of a bill that is not paid yet
+  const me = await getSessionUser();
+  const canEditTax = !bill.paid && !!me && (await canOperateProperty(me, property));
 
   const invoice: InvoiceData = {
     invoiceNo: `${bill.type === "ELECTRICITY" ? "ELEC" : "WATR"}-${bill.period.replace("-", "")}-${bill.id.slice(-4).toUpperCase()}`,
@@ -37,10 +42,11 @@ export default async function BillPage({ params }: { params: Promise<{ token: st
     issueDate: fmtDate(new Date()),
     dueDate: fmtDate(billDueDate(bill.period)),
     items: [{
+      key: "BILL",
       title: `${BILL_LABEL[bill.type]} bill · ${monthLabel(bill.period)}`,
       description: [category, bill.note].filter(Boolean).join(" · "),
       rate: bill.amount,
-      taxPct: 0,
+      taxPct: bill.taxPct,
     }],
     terms: BILL_TERMS,
     backHref: `/resident/${token}`,
@@ -50,7 +56,7 @@ export default async function BillPage({ params }: { params: Promise<{ token: st
 
   return (
     <div className="tw min-h-screen bg-cream/60 text-foreground">
-      <main className="px-4 py-8 md:py-12 print:p-0"><InvoiceView invoice={invoice} /></main>
+      <main className="px-4 py-8 md:py-12 print:p-0"><InvoiceView invoice={invoice} taxEdit={canEditTax ? { allocationId: a.id, billId: bill.id } : undefined} /></main>
     </div>
   );
 }

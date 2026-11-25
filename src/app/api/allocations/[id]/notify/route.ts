@@ -5,8 +5,10 @@ import { canOperateProperty } from "@/lib/property-access";
 import { notify } from "@/lib/mailer";
 import { sendSms } from "@/lib/sms";
 import { BILL_LABEL, billDueDate, fmtDate, inr, monthLabel } from "@/lib/bills";
+import { RENT_TAX_KEY, taxRatesOf, withTax } from "@/lib/invoice";
 
 // Reminds a tenant to pay. Only for unpaid rent / bills. Email if the tenant has one, otherwise SMS.
+// { kind: "BILL", billId, fresh: true } is the "Send bill" button on a new bill: same delivery, but worded as a new bill, not a reminder.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
@@ -26,13 +28,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const pay = await prisma.rentPayment.findUnique({ where: { allocationId_period: { allocationId: id, period } } });
     if (pay?.paid) return NextResponse.json({ error: "Rent is already paid." }, { status: 409 });
     subject = `Rent reminder · ${monthLabel(period)} · ${property}`;
-    body = `Hello ${a.fullName},\n\nYour rent of ${inr(a.monthlyRent)} for ${monthLabel(period)} (${a.roomLabel ?? a.room.label}, ${property}) is pending. Please complete the payment here:\n${origin}/resident/${a.accessToken}/rent\n\nIgnore this message if you have already paid.`;
+    body = `Hello ${a.fullName},\n\nYour rent of ${inr(withTax(a.monthlyRent, taxRatesOf(a.taxRates)[RENT_TAX_KEY] ?? 0))} for ${monthLabel(period)} (${a.roomLabel ?? a.room.label}, ${property}) is pending. Please complete the payment here:\n${origin}/resident/${a.accessToken}/rent\n\nIgnore this message if you have already paid.`;
   } else if (b.kind === "BILL") {
     const bill = await prisma.residentBill.findFirst({ where: { id: String(b.billId ?? ""), allocationId: id } });
     if (!bill) return NextResponse.json({ error: "Bill not found." }, { status: 404 });
     if (bill.paid) return NextResponse.json({ error: "This bill is already paid." }, { status: 409 });
-    subject = `${BILL_LABEL[bill.type]} bill reminder · ${monthLabel(bill.period)} · ${property}`;
-    body = `Hello ${a.fullName},\n\nYour ${BILL_LABEL[bill.type].toLowerCase()} bill of ${inr(bill.amount)} for ${monthLabel(bill.period)} (${a.roomLabel ?? a.room.label}, ${property}) is pending. It was due on ${fmtDate(billDueDate(bill.period))}. Please complete the payment here:\n${origin}/resident/${a.accessToken}/bill/${bill.id}\n\nIgnore this message if you have already paid.`;
+    const total = inr(withTax(bill.amount, bill.taxPct));
+    const link = `${origin}/resident/${a.accessToken}/bill/${bill.id}`;
+    const what = `${BILL_LABEL[bill.type].toLowerCase()} bill of ${total} for ${monthLabel(bill.period)} (${a.roomLabel ?? a.room.label}, ${property})`;
+    if (b.fresh === true) {
+      subject = `New ${BILL_LABEL[bill.type].toLowerCase()} bill · ${monthLabel(bill.period)} · ${property}`;
+      body = `Hello ${a.fullName},\n\nYour ${what} is ready. Please pay it by ${fmtDate(billDueDate(bill.period))}. You can see the invoice and pay here:\n${link}\n\nIgnore this message if you have already paid.`;
+    } else {
+      subject = `${BILL_LABEL[bill.type]} bill reminder · ${monthLabel(bill.period)} · ${property}`;
+      body = `Hello ${a.fullName},\n\nYour ${what} is pending. It was due on ${fmtDate(billDueDate(bill.period))}. Please complete the payment here:\n${link}\n\nIgnore this message if you have already paid.`;
+    }
   } else {
     return NextResponse.json({ error: "Nothing to notify about." }, { status: 400 });
   }
@@ -43,7 +53,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json({
     channel, sent,
     message: sent
-      ? `Reminder sent by ${channel} to ${to}.`
+      ? `${b.kind === "BILL" && b.fresh === true ? "Bill" : "Reminder"} sent by ${channel} to ${to}.`
       : channel === "email" ? "Email could not be sent. Check the SMTP settings." : "This tenant has no email, and SMS is not set up yet, so nothing was sent.",
   }, { status: sent ? 200 : 502 });
 }

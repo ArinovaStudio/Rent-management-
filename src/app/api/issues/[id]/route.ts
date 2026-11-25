@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-import { STATUS_LABEL, canUpdateIssue, notifyEmails, superAdminEmails } from "@/lib/issues";
+import { STATUS_LABEL, canUpdateIssue, notifyEmails, superAdminEmails, ticketLabel } from "@/lib/issues";
 
 const STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"] as const;
 
@@ -44,7 +44,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   await notifyEmails(
     [issue.reportedBy.email, issue.property.owner.email, issue.recipient?.email, ...(issue.escalatedAt ? await superAdminEmails() : [])].filter((e) => e !== me.email),
-    `Ticket #${issue.ticketNo} update: ${issue.title}`,
+    `Ticket ${ticketLabel(issue)} update: ${issue.title}`,
     `${me.name} updated the ticket at "${issue.property.name}". Status: ${label}.${note ? `\n\nNote: ${note}` : ""}`
   );
   return NextResponse.json({ ok: true });

@@ -1,0 +1,11 @@
+-- AlterTable
+ALTER TABLE "EmailOtp" ADD COLUMN "purpose" TEXT NOT NULL DEFAULT 'VERIFY';
+
+-- AlterTable
+ALTER TABLE "Allocation" ADD COLUMN "taxRates" JSONB NOT NULL DEFAULT '{}';
+
+-- AlterTable
+ALTER TABLE "ResidentBill" ADD COLUMN "taxPct" DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "RentPayment" ADD COLUMN "taxPct" DOUBLE PRECISION NOT NULL DEFAULT 0;

@@ -3,6 +3,7 @@ import { Building2, CalendarDays, FileText, Home, Mail, MapPin, Phone, ShieldChe
 import { prisma } from "@/lib/db";
 import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
 import { BILL_LABEL, billDueDate, fmtDate, inr, monthLabel, rentDueDate, rentPeriod } from "@/lib/bills";
+import { RENT_TAX_KEY, taxRatesOf, withTax } from "@/lib/invoice";
 import ResidentView, { type BillItem, type HistoryItem } from "./resident-view";
 
 const card = "rounded-[1.75rem] bg-background p-5 md:p-6";
@@ -44,19 +45,21 @@ export default async function ResidentPage({ params }: { params: Promise<{ token
   const period = rentPeriod();
   const thisMonth = resident.rentPayments.find((p) => p.period === period);
   const paidOn = (d: Date | null, fb: Date) => fmtDate(d ?? fb);
+  // Amounts shown here include tax, the same as on the invoice
+  const rentTax = thisMonth?.paid ? thisMonth.taxPct : taxRatesOf(resident.taxRates)[RENT_TAX_KEY] ?? 0;
   const rent = {
     covered: resident.monthlyRent === 0,
     label: monthLabel(period),
-    amount: thisMonth?.amount ?? resident.monthlyRent,
+    amount: withTax(thisMonth?.amount ?? resident.monthlyRent, rentTax),
     paid: !!thisMonth?.paid,
     paidOn: thisMonth?.paid ? paidOn(thisMonth.paidAt, thisMonth.updatedAt) : null,
     dueDate: fmtDate(rentDueDate(resident.moveInDate, period)),
-    past: resident.rentPayments.filter((p) => p.paid && p.period !== period).map((p) => ({ period: p.period, label: monthLabel(p.period), amount: p.amount, paidOn: paidOn(p.paidAt, p.updatedAt) })),
+    past: resident.rentPayments.filter((p) => p.paid && p.period !== period).map((p) => ({ period: p.period, label: monthLabel(p.period), amount: withTax(p.amount, p.taxPct), paidOn: paidOn(p.paidAt, p.updatedAt) })),
   };
 
   // ---- Bills: newest first per type; the first is the current bill, the rest are history ----
   const toItem = (b: (typeof resident.bills)[number]): BillItem => ({
-    id: b.id, period: b.period, label: monthLabel(b.period), amount: b.amount, note: b.note, paid: b.paid,
+    id: b.id, period: b.period, label: monthLabel(b.period), amount: withTax(b.amount, b.taxPct), note: b.note, paid: b.paid,
     paidOn: b.paid ? paidOn(b.paidAt, b.updatedAt) : null, dueDate: fmtDate(billDueDate(b.period)),
   });
   const bills = {
@@ -67,11 +70,11 @@ export default async function ResidentPage({ params }: { params: Promise<{ token
   // ---- Payment history: all paid rent months and paid bills together ----
   const history: HistoryItem[] = [
     ...resident.rentPayments.filter((p) => p.paid && !rent.covered).map((p) => ({
-      key: `r-${p.id}`, sort: (p.paidAt ?? p.updatedAt).getTime(), kind: "Rent", label: monthLabel(p.period), amount: p.amount,
+      key: `r-${p.id}`, sort: (p.paidAt ?? p.updatedAt).getTime(), kind: "Rent", label: monthLabel(p.period), amount: withTax(p.amount, p.taxPct),
       paidOn: paidOn(p.paidAt, p.updatedAt), href: `/resident/${token}/rent?period=${p.period}`,
     })),
     ...resident.bills.filter((b) => b.paid).map((b) => ({
-      key: `b-${b.id}`, sort: (b.paidAt ?? b.updatedAt).getTime(), kind: `${BILL_LABEL[b.type]} bill`, label: monthLabel(b.period), amount: b.amount,
+      key: `b-${b.id}`, sort: (b.paidAt ?? b.updatedAt).getTime(), kind: `${BILL_LABEL[b.type]} bill`, label: monthLabel(b.period), amount: withTax(b.amount, b.taxPct),
       paidOn: paidOn(b.paidAt, b.updatedAt), href: `/resident/${token}/bill/${b.id}`,
     })),
   ].sort((x, y) => y.sort - x.sort);

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { canOperateProperty } from "@/lib/property-access";
+import { cleanPct } from "@/lib/invoice";
+import { rentPeriod } from "@/lib/bills";
 
 const TYPES = ["ELECTRICITY", "WATER"] as const;
 
@@ -29,14 +31,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   if (!type) return NextResponse.json({ error: "Choose electricity or water." }, { status: 400 });
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return NextResponse.json({ error: "Choose a valid month." }, { status: 400 });
+  // Not for a future month, and not for a month before the resident moved in
+  const moveInPeriod = rentPeriod(g.allocation.moveInDate);
+  if (period > rentPeriod() || period < moveInPeriod) {
+    return NextResponse.json({ error: "Choose a month from the move-in month up to the current month." }, { status: 400 });
+  }
   if (String(b.amount ?? "").trim() === "" || !Number.isInteger(amount) || amount < 0 || amount > 10_000_000) {
     return NextResponse.json({ error: "Enter the bill amount in whole rupees." }, { status: 400 });
   }
 
+  // Tax % is optional (0 when left out). `amount` is the amount before tax.
+  const taxPct = b.taxPct === undefined || b.taxPct === null ? 0 : cleanPct(b.taxPct);
+  if (taxPct === null) return NextResponse.json({ error: "Enter a tax between 0 and 100." }, { status: 400 });
+
   // Every generated bill is its own record, so earlier bills stay in the resident's history
   const paid = b.paid === true;
   const bill = await prisma.residentBill.create({
-    data: { allocationId: id, type, period, amount, note: note || null, paid, paidAt: paid ? new Date() : null, createdById: g.me.id },
+    data: { allocationId: id, type, period, amount, taxPct, note: note || null, paid, paidAt: paid ? new Date() : null, createdById: g.me.id },
   });
   return NextResponse.json(bill, { status: 201 });
 }

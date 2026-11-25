@@ -1,9 +1,11 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Banknote, Check, CreditCard, Download, Landmark, QrCode, Smartphone, Users, X } from "lucide-react";
+import { ArrowLeft, Banknote, Check, CreditCard, Download, Landmark, Pencil, QrCode, Receipt, Send, Smartphone, Users, X } from "lucide-react";
 import { qrModules } from "@/lib/qr";
-import { invoiceTotals, money, type InvoiceData } from "@/lib/invoice";
+import { authFetch } from "@/lib/fetch-auth";
+import { BILL_LABEL, billDueDate, fmtDate, inr, monthLabel } from "@/lib/bills";
+import { invoiceTotals, money, type DraftBill, type InvoiceData, type InvoiceItem, type TaxEdit } from "@/lib/invoice";
 
 const fieldCls = "w-full rounded-2xl bg-cream/60 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary";
 
@@ -27,10 +29,67 @@ function QrSvg({ text }: { text: string }) {
   );
 }
 
+// Tax % of one line. Staff see a pencil beside the value; it turns into a small input right there,
+// and the new value is kept as soon as they click anywhere else (Enter keeps it too, Escape cancels).
+function TaxCell({ value, editable, onCommit }: { value: number; editable: boolean; onCommit: (pct: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  const cancelled = useRef(false);
+
+  if (!editable) return <>{value}%</>;
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="number"
+        min={0}
+        max={100}
+        step="any"
+        inputMode="decimal"
+        aria-label="Tax percent"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") { cancelled.current = true; e.currentTarget.blur(); }
+        }}
+        onBlur={() => {
+          setEditing(false);
+          if (cancelled.current) { cancelled.current = false; return; }
+          const n = Number(text);
+          // empty or out-of-range input keeps the old value
+          if (text.trim() === "" || !Number.isFinite(n) || n < 0 || n > 100) return;
+          const pct = Math.round(n * 100) / 100;
+          if (pct !== value) onCommit(pct);
+        }}
+        className="w-16 rounded-lg bg-cream/60 px-2 py-1 text-right text-sm outline-none ring-2 ring-primary"
+      />
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center justify-end gap-1">
+      {value}%
+      <button type="button" aria-label="Edit tax" title="Edit tax" onClick={() => { setText(String(value)); setEditing(true); }} className="rounded-full p-1 text-gray-400 hover:bg-cream hover:text-primary print:hidden">
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  );
+}
+
 type Method = "qr" | "card" | "upi" | "bank";
 type Mode = "full" | "equal" | "custom";
 
-export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
+const JSON_HEADERS = { "Content-Type": "application/json" };
+const MAX_UNITS = 100000;
+const MAX_RATE = 1000;
+
+// `draft`   : staff are making a new bill on this page (they type the units and rate, then press Generate bill).
+// `taxEdit` : staff are looking at an existing rent / bill invoice and may change the tax of each line.
+// Without either, this is the plain invoice the resident sees.
+export default function InvoiceView({ invoice: base, draft, taxEdit }: { invoice: InvoiceData; draft?: DraftBill; taxEdit?: TaxEdit }) {
   const [termsOpen, setTermsOpen] = useState(false);
   const [method, setMethod] = useState<Method | null>(null);
   const [mode, setMode] = useState<Mode>("full");
@@ -38,8 +97,47 @@ export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
   const [mine, setMine] = useState("");
   const [copied, setCopied] = useState(false);
 
-  const { sub, tax, total } = invoiceTotals(invoice.items);
+  // ---- new bill (draft) inputs ----
+  const [period, setPeriod] = useState(draft?.initialPeriod ?? "");
+  const [units, setUnits] = useState("");
+  const [unitRate, setUnitRate] = useState("");
+  const [saved, setSaved] = useState<{ id: string } | null>(null);
+  const [genBusy, setGenBusy] = useState(false);
+  const [genError, setGenError] = useState("");
+  const [sendBusy, setSendBusy] = useState(false);
+  const [sendMsg, setSendMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // ---- tax edits made on this page, by line key ----
+  const [taxes, setTaxes] = useState<Record<string, number>>({});
+  const [taxError, setTaxError] = useState("");
+
+  const isElec = draft?.type === "ELECTRICITY";
+  const periodOk = /^\d{4}-(0[1-9]|1[0-2])$/.test(period) && (!draft || (period >= draft.minPeriod && period <= draft.maxPeriod));
+  const amount = Math.round(Number(units) * Number(unitRate));
+  // sensible limits so a typo can't make a silly bill
+  const ready = units !== "" && unitRate !== "" && Number(units) >= 0 && Number(units) <= MAX_UNITS && Number(unitRate) >= 0 && Number(unitRate) <= MAX_RATE && Number.isFinite(amount) && amount <= 10_000_000;
+  const unitName = isElec ? "units (kWh)" : "units (kL)";
+
+  // For a new bill the invoice is built from what staff typed; otherwise it is exactly what the page was given.
+  const invoice: InvoiceData = draft
+    ? {
+        ...base,
+        invoiceNo: `${isElec ? "ELEC" : "WATR"}-${periodOk ? period.replace("-", "") : "------"}-${saved ? saved.id.slice(-4).toUpperCase() : "NEW"}`,
+        periodLabel: periodOk ? monthLabel(period) : "—",
+        dueDate: periodOk ? fmtDate(billDueDate(period)) : "—",
+        items: [{
+          key: "BILL",
+          title: `${BILL_LABEL[draft.type]} bill · ${periodOk ? monthLabel(period) : "—"}`,
+          description: [draft.category, ready ? `${units} ${isElec ? "units" : "kL"} × ${inr(Number(unitRate))}` : ""].filter(Boolean).join(" · "),
+          rate: ready ? amount : 0,
+          taxPct: 0,
+        }],
+      }
+    : base;
+
+  const items: InvoiceItem[] = invoice.items.map((it) => ({ ...it, taxPct: taxes[it.key ?? it.title] ?? it.taxPct }));
+  const { sub, tax, total } = invoiceTotals(items);
   const paid = invoice.status === "PAID";
+  const taxOn = !paid && (!!taxEdit || !!draft); // a paid invoice keeps its tax
   const canSplit = (invoice.splitPeople ?? 1) > 1; // solo tenant: no split section
   // ---- split maths, in paise so nothing gets lost to rounding ----
   const totalPaise = Math.round(total * 100);
@@ -58,6 +156,64 @@ export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
     window.print();
     document.title = prev;
   }
+  async function generate() {
+    if (!draft) return;
+    if (!periodOk) return setGenError(`Choose a month from ${monthLabel(draft.minPeriod)} to ${monthLabel(draft.maxPeriod)}.`);
+    if (!ready) return setGenError(`Enter the units (up to ${MAX_UNITS.toLocaleString("en-IN")}) and the rate (up to ₹${MAX_RATE.toLocaleString("en-IN")}).`);
+    setGenBusy(true);
+    setGenError("");
+    const res = await authFetch(`/api/allocations/${draft.allocationId}/bills`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ type: draft.type, period, amount, taxPct: taxes.BILL ?? 0, note: `${units} ${isElec ? "units" : "kL"} × ${inr(Number(unitRate))}`, paid: false }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setGenBusy(false);
+    if (!res.ok) return setGenError(data.error ?? "Something went wrong.");
+    setSaved({ id: data.id });
+  }
+
+  async function sendBill() {
+    if (!draft || !saved) return;
+    setSendBusy(true);
+    setSendMsg(null);
+    const res = await authFetch(`/api/allocations/${draft.allocationId}/notify`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ kind: "BILL", billId: saved.id, fresh: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSendBusy(false);
+    setSendMsg({ ok: res.ok, text: data.message ?? data.error ?? (res.ok ? "Bill sent." : "Couldn't send the bill.") });
+  }
+
+  // Keeps the new tax on screen at once and saves it; if saving fails the old value comes back.
+  async function changeTax(it: InvoiceItem, pct: number) {
+    const k = it.key ?? it.title;
+    const prev = taxes[k] ?? it.taxPct;
+    setTaxError("");
+    setTaxes((t) => ({ ...t, [k]: pct }));
+    const allocationId = taxEdit?.allocationId ?? draft?.allocationId;
+    if (!allocationId || !it.key) return;
+
+    let body: Record<string, unknown>;
+    if (it.key === "BILL") {
+      const billId = taxEdit?.billId ?? saved?.id;
+      if (!billId) return; // new bill not saved yet: the tax is saved together with the bill
+      body = { target: "BILL", billId, pct };
+    } else if (it.key === "RENT") {
+      body = { target: "RENT", pct };
+    } else {
+      body = { target: "AMENITY", name: it.key.replace(/^AMENITY:/, ""), pct };
+    }
+    const res = await authFetch(`/api/allocations/${allocationId}/tax`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setTaxes((t) => ({ ...t, [k]: prev }));
+      setTaxError(data.error ?? "Couldn't save the tax.");
+    }
+  }
+
   function copyShare() {
     const msg = `Hi! My share for ${invoice.invoiceNo} (${invoice.periodLabel}) is ${money(each / 100)} each. Total ${money(total)}.${invoice.payee.upiId ? ` Please pay me on UPI.` : ""}`;
     navigator.clipboard.writeText(msg);
@@ -106,6 +262,25 @@ export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
             </dl>
           </div>
 
+          {/* New bill: what staff fill in. It turns into the invoice below as they type. */}
+          {draft && !saved && (
+            <div className="mt-8 rounded-2xl bg-cream/60 p-4 print:hidden">
+              <p className="mb-3 text-sm font-semibold text-gray-800">Bill details</p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="grid gap-1 text-xs text-gray-600">Month
+                  <input className={`${fieldCls} bg-white`} type="month" min={draft.minPeriod} max={draft.maxPeriod} value={period} onChange={(e) => setPeriod(e.target.value)} />
+                </label>
+                <label className="grid gap-1 text-xs text-gray-600">Consumed {unitName}
+                  <input className={`${fieldCls} bg-white`} type="number" min={0} max={MAX_UNITS} step="any" inputMode="decimal" value={units} onChange={(e) => setUnits(e.target.value)} />
+                </label>
+                <label className="grid gap-1 text-xs text-gray-600">Rate per unit (₹)
+                  <input className={`${fieldCls} bg-white`} type="number" min={0} max={MAX_RATE} step="any" inputMode="decimal" value={unitRate} onChange={(e) => setUnitRate(e.target.value)} />
+                </label>
+              </div>
+              {period !== "" && !periodOk && <p role="alert" className="mt-2 text-xs text-destructive">Choose a month from {monthLabel(draft.minPeriod)} to {monthLabel(draft.maxPeriod)}.</p>}
+            </div>
+          )}
+
           {/* Items */}
           <div className="mt-8 overflow-hidden rounded-lg border border-gray-200">
             <div className="grid grid-cols-12 bg-primary px-4 py-2.5 text-xs font-medium text-primary-foreground [-webkit-print-color-adjust:exact] [print-color-adjust:exact]">
@@ -114,18 +289,20 @@ export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
               <div className="col-span-2 text-right">Tax %</div>
               <div className="col-span-2 text-right">Amount</div>
             </div>
-            {invoice.items.map((it) => (
-              <div key={it.title} className="grid grid-cols-12 items-start border-t border-gray-100 px-4 py-3 text-sm">
+            {items.map((it) => (
+              <div key={it.key ?? it.title} className="grid grid-cols-12 items-start border-t border-gray-100 px-4 py-3 text-sm">
                 <div className="col-span-6 pr-2">
                   <p className="font-medium text-gray-900">{it.title}</p>
                   {it.description && <p className="text-xs text-gray-500">{it.description}</p>}
                 </div>
                 <div className="col-span-2 text-right">{money(it.rate)}</div>
-                <div className="col-span-2 text-right">{it.taxPct}%</div>
+                <div className="col-span-2 text-right"><TaxCell value={it.taxPct} editable={taxOn && !!it.key} onCommit={(pct) => changeTax(it, pct)} /></div>
                 <div className="col-span-2 text-right font-medium">{money(it.rate + (it.rate * it.taxPct) / 100)}</div>
               </div>
             ))}
           </div>
+          {taxError && <p role="alert" className="mt-2 text-xs text-destructive print:hidden">{taxError}</p>}
+          {taxOn && items.some((i) => i.key) && !taxError && <p className="mt-2 text-xs text-gray-400 print:hidden">Tap the pencil beside a tax value to change it.</p>}
 
           {/* Terms + totals */}
           <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
@@ -148,14 +325,14 @@ export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
       {/* ================= Sidebar (right) ================= */}
       <aside className="w-full self-start lg:w-80 print:hidden">
         <div className="space-y-5 rounded-[1.75rem] bg-white p-6 shadow-sm lg:sticky lg:top-6">
-          <a href={invoice.backHref} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" />Back to your details</a>
+          <a href={invoice.backHref} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" />{invoice.backLabel ?? "Back to your details"}</a>
 
           <div>
             <h2 className="text-lg font-semibold">Invoice #{invoice.invoiceNo}</h2>
             <div className="mt-3 h-px bg-gray-100" />
             <dl className="mt-3 space-y-2 text-sm">
               {([
-                ["Status", paid ? `Paid${invoice.paidOn ? ` on ${invoice.paidOn}` : ""}` : "Due"],
+                ["Status", paid ? `Paid${invoice.paidOn ? ` on ${invoice.paidOn}` : ""}` : draft && !saved ? "Draft" : "Due"],
                 ["Period", invoice.periodLabel],
                 ["Billed to", invoice.to.name],
                 ["Date", invoice.issueDate],
@@ -167,7 +344,24 @@ export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
             </dl>
           </div>
 
-          {!paid && (
+          {/* New bill: Generate bill, then Send bill (above Download) */}
+          {draft && !saved && (
+            <div className="space-y-2">
+              <button type="button" disabled={genBusy || !periodOk || !ready} onClick={generate} className="flex w-full items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm text-primary-foreground hover:bg-ink disabled:cursor-not-allowed disabled:opacity-50">
+                <Receipt className="h-4 w-4" />{genBusy ? "Generating…" : "Generate Bill"}
+              </button>
+              {genError && <p role="alert" className="text-xs text-destructive">{genError}</p>}
+              <p className="text-center text-[11px] text-gray-500">Fill in the month, units and rate. The invoice updates as you type.</p>
+            </div>
+          )}
+          {draft && saved && (
+            <div className="rounded-2xl bg-primary/10 px-4 py-3 text-sm">
+              <p className="flex items-center gap-2 font-medium text-primary"><Check className="h-4 w-4" />Bill generated · {money(total)}</p>
+              <p className="mt-1 text-xs text-gray-600">It is now on the resident&apos;s bill page. Send it to them, or download it.</p>
+            </div>
+          )}
+
+          {!paid && !draft && (
             <>
               {/* Split */}
               { canSplit && (
@@ -298,12 +492,22 @@ export default function InvoiceView({ invoice }: { invoice: InvoiceData }) {
             </>
           )}
 
-          <div className="space-y-1.5">
-            <button type="button" onClick={download} className="flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm text-white hover:bg-primary">
-              <Download className="h-4 w-4" />Download Bill (PDF)
-            </button>
-            <p className="text-center text-[11px] text-gray-500">Choose “Save as PDF” in the window that opens.</p>
-          </div>
+          {(!draft || saved) && (
+            <div className="space-y-1.5">
+              {draft && saved && (
+                <>
+                  <button type="button" disabled={sendBusy} onClick={sendBill} className="mb-1.5 flex w-full items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm text-primary-foreground hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60">
+                    <Send className="h-4 w-4" />{sendBusy ? "Sending…" : "Send Bill"}
+                  </button>
+                  {sendMsg && <p role="status" className={`mb-1.5 text-center text-xs ${sendMsg.ok ? "text-primary" : "text-destructive"}`}>{sendMsg.text}</p>}
+                </>
+              )}
+              <button type="button" onClick={download} className="flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm text-white hover:bg-primary">
+                <Download className="h-4 w-4" />Download Bill (PDF)
+              </button>
+              <p className="text-center text-[11px] text-gray-500">Choose “Save as PDF” in the window that opens.</p>
+            </div>
+          )}
         </div>
       </aside>
 

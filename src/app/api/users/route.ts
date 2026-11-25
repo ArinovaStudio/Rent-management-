@@ -118,10 +118,15 @@ export async function POST(req: Request) {
     return bad({ [failure.field]: failure.error });
   }
 
+  // Login details go to the new person's email. The password is temporary: they are told to change it after the first sign-in.
+  const loginUrl = process.env.APP_URL ? `${process.env.APP_URL.replace(/\/$/, "")}/login` : null;
   await notify(
     email,
     "Your account has been created",
-    `Hi ${name},\n\n${me.name} created a ${role === "PROPERTY_MANAGER" ? "Property Manager" : "Property Admin"} account for you.\n\nSign in with the temporary password you were given. Your account is ready to use.`
+    `Hi ${name},\n\n${me.name} created a ${role === "PROPERTY_MANAGER" ? "Property Manager" : "Property Admin"} account for you.\n\n` +
+      `Your login details:\nLogin ID (email): ${email}\nTemporary password: ${password}\n\n` +
+      (loginUrl ? `Sign in here: ${loginUrl}\n\n` : "") +
+      `This password is temporary. After you sign in, open Profile and change it to a password only you know. Do not share it with anyone.`
   );
 
   return NextResponse.json({ id: user.id, name: user.name, email: user.email, role: user.role }, { status: 201 });

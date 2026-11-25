@@ -1,6 +1,7 @@
 // Shared types + helpers for the invoice-style rent and bill pages.
 
-export type InvoiceItem = { title: string; description?: string; rate: number; taxPct: number };
+// `key` says which saved tax rate a line uses: "RENT", "AMENITY:<name>" or "BILL". Lines without a key can't have their tax edited.
+export type InvoiceItem = { key?: string; title: string; description?: string; rate: number; taxPct: number };
 
 export type InvoiceData = {
   invoiceNo: string;
@@ -15,9 +16,44 @@ export type InvoiceData = {
   items: InvoiceItem[];
   terms: string[];
   backHref: string;
+  backLabel?: string; // text of the back link, defaults to "Back to your details"
   splitPeople?: number; // people living under this tenancy, used as the default for the split
   payee: { upiId: string; name: string; demo: boolean };
 };
+
+// Staff-only extras for InvoiceView
+// draft: the invoice is a new bill that staff are filling in (units and rate), then saving.
+export type DraftBill = { allocationId: string; type: "ELECTRICITY" | "WATER"; category: string; initialPeriod: string; minPeriod: string; maxPeriod: string }; // months allowed: move-in month up to this month
+// taxEdit: staff may change the tax % of each line. billId is set on a saved bill's own page.
+export type TaxEdit = { allocationId: string; billId?: string };
+
+// ---- Tax ----
+// Tax % saved for a tenant's rent and amenities: { "RENT": 5, "AMENITY:Gym": 18 }. Anything missing is 0%.
+export type TaxRates = Record<string, number>;
+export const RENT_TAX_KEY = "RENT";
+export const amenityTaxKey = (name: string) => `AMENITY:${name}`;
+
+// A tax % from user input: 0 to 100, at most 2 decimals. null = not valid.
+export function cleanPct(v: unknown): number | null {
+  if (typeof v === "string" && v.trim() === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 100) return null;
+  return Math.round(n * 100) / 100;
+}
+
+export function taxRatesOf(raw: unknown): TaxRates {
+  const out: TaxRates = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      const pct = cleanPct(v);
+      if (pct !== null) out[k] = pct;
+    }
+  }
+  return out;
+}
+
+// amount + tax, to the paisa
+export const withTax = (amount: number, pct: number) => Math.round((amount + (amount * pct) / 100) * 100) / 100;
 
 export const money = (n: number) =>
   `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

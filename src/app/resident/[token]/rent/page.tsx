@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { fmtDate, monthLabel, rentDueDate, rentPeriod } from "@/lib/bills";
 import { roomCategoryLabel, roomFloor } from "@/lib/room-category";
-import { RENT_TERMS, payeeFor, propertyLines, type InvoiceData } from "@/lib/invoice";
+import { RENT_TAX_KEY, RENT_TERMS, amenityTaxKey, payeeFor, propertyLines, taxRatesOf, type InvoiceData } from "@/lib/invoice";
+import { getSessionUser } from "@/lib/current-user";
+import { canOperateProperty } from "@/lib/property-access";
 import InvoiceView from "../invoice-view";
 import { isWholeUnit } from "@/lib/occupancy";
 import { amenityCharges } from "@/lib/amenity-charges";
@@ -29,7 +31,13 @@ export default async function RentPage({ params, searchParams }: { params: Promi
   const household = isWholeUnit(property)
     ? await prisma.allocation.count({ where: { roomId: a.roomId, status: "ACTIVE" } })
     : a.occupants;
-  
+
+  // Tax % per line. A paid month keeps the rent tax it had when it was paid; staff can edit the tax of an unpaid invoice.
+  const rates = taxRatesOf(a.taxRates);
+  const rentTax = paidRow?.paid ? paidRow.taxPct : rates[RENT_TAX_KEY] ?? 0;
+  const me = await getSessionUser();
+  const canEditTax = !paidRow?.paid && !!me && (await canOperateProperty(me, property));
+
   const invoice: InvoiceData = {
     invoiceNo: `RENT-${token.slice(0, 4).toUpperCase()}-${period.replace("-", "")}`,
     kind: "RENT",
@@ -45,7 +53,10 @@ export default async function RentPage({ params, searchParams }: { params: Promi
     },
     issueDate: fmtDate(new Date()),
     dueDate: fmtDate(due),
-    items: [{ title: `Monthly rent · ${monthLabel(period)}`, description: `${category} · ${a.room.label}`, rate: rentAmount, taxPct: 0 }, ...amenity.list.map((x) => ({ title: `${x.name} charge`, description: "Amenity · monthly", rate: x.charge, taxPct: 0 }))],
+    items: [
+      { key: RENT_TAX_KEY, title: `Monthly rent · ${monthLabel(period)}`, description: `${category} · ${a.room.label}`, rate: rentAmount, taxPct: rentTax },
+      ...amenity.list.map((x) => ({ key: amenityTaxKey(x.name), title: `${x.name} charge`, description: "Amenity · monthly", rate: x.charge, taxPct: rates[amenityTaxKey(x.name)] ?? 0 })),
+    ],
     terms: RENT_TERMS,
     backHref: `/resident/${token}`,
     splitPeople: household,
@@ -54,7 +65,7 @@ export default async function RentPage({ params, searchParams }: { params: Promi
 
   return (
     <div className="tw min-h-screen bg-cream/60 text-foreground">
-      <main className="px-4 py-8 md:py-12 print:p-0"><InvoiceView invoice={invoice} /></main>
+      <main className="px-4 py-8 md:py-12 print:p-0"><InvoiceView invoice={invoice} taxEdit={canEditTax ? { allocationId: a.id } : undefined} /></main>
     </div>
   );
 }

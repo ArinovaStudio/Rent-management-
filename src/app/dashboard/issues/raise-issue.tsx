@@ -97,7 +97,7 @@ export default function RaiseIssue({ properties, propertyId, label = "Raise an i
         toast(data.error ?? "Could not raise the issue.", "error");
         return;
       }
-      toast(`Issue raised · Ticket #${data.ticketNo}`);
+      toast(`Issue raised · Ticket ${data.ticketCode ?? `#${data.ticketNo}`}`);
       reset();
       setOpen(false);
       refresh();

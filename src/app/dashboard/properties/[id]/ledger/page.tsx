@@ -7,6 +7,7 @@ import { canOperateProperty } from "@/lib/property-access";
 import { propertiesBase } from "@/lib/routes";
 import { AdminShell, Panel } from "@/components/admin/AdminShell";
 import { monthLabel } from "@/lib/bills";
+import { withTax } from "@/lib/invoice";
 import LedgerTable, { type LedgerRow } from "./ledger-table";
 
 const periodOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -46,7 +47,7 @@ export default async function PaymentLedgerPage({ params, searchParams }: { para
         id: a.id, name: a.fullName, phone: a.phone, email: a.email,
         floor: a.floorNumber ?? room.floor ?? 0, flat: a.roomLabel ?? room.label,
         rent: a.monthlyRent, rentPaid: !!pay?.paid, rentPaidOn: pay?.paid ? (pay.paidAt ?? pay.updatedAt).toLocaleDateString("en-IN") : null,
-        bills: a.bills.map((b) => ({ id: b.id, type: b.type, period: b.period, amount: b.amount, paid: b.paid, paidOn: b.paid ? (b.paidAt ?? b.updatedAt).toLocaleDateString("en-IN") : null, note: b.note })),
+        bills: a.bills.map((b) => ({ id: b.id, type: b.type, period: b.period, amount: withTax(b.amount, b.taxPct), paid: b.paid, paidOn: b.paid ? (b.paidAt ?? b.updatedAt).toLocaleDateString("en-IN") : null, note: b.note })),
       };
     });
   const floors = [...new Set(rows.map((r) => r.floor))].sort((a, b) => a - b);

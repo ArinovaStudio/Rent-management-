@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { canOperateProperty } from "@/lib/property-access";
+import { RENT_TAX_KEY, taxRatesOf } from "@/lib/invoice";
 
 // Sets rent paid / unpaid for one month of one main tenant
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -19,11 +20,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const key = { allocationId_period: { allocationId: id, period } };
   const existing = await prisma.rentPayment.findUnique({ where: key, select: { paid: true, paidAt: true, amount: true } });
   const paidAt = b.paid ? (existing?.paid ? existing.paidAt ?? new Date() : new Date()) : null;
+  // The rent tax % in force is saved when the month is marked paid, so changing the tax later never rewrites a paid invoice
+  const taxPct = taxRatesOf(a.taxRates)[RENT_TAX_KEY] ?? 0;
   const row = await prisma.rentPayment.upsert({
     where: key,
-    create: { allocationId: id, period, amount: a.monthlyRent, paid: b.paid, paidAt, updatedById: me.id },
+    create: { allocationId: id, period, amount: a.monthlyRent, taxPct, paid: b.paid, paidAt, updatedById: me.id },
     // amount keeps the rent saved the first time, so later rent changes never rewrite an old month
-    update: { paid: b.paid, paidAt, updatedById: me.id },
+    update: { paid: b.paid, paidAt, updatedById: me.id, ...(b.paid && !existing?.paid ? { taxPct } : {}) },
   });
   return NextResponse.json(row);
 }

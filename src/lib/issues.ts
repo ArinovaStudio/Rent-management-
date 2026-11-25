@@ -1,3 +1,4 @@
+import { randomInt } from "crypto";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { isAssignedManager } from "@/lib/property-access";
@@ -26,6 +27,21 @@ export async function canSeeIssue(me: { id: string; role: Role }, issue: { prope
 // Who can change the status and escalate: Super Admin, and the Property Admin / co-owner the ticket is with.
 export function canUpdateIssue(me: { id: string; role: Role }, issue: { recipientId: string | null; property: { ownerId: string } }) {
   return me.role === "SUPER_ADMIN" || (me.role === "PROPERTY_ADMIN" && onTicket(me, issue));
+}
+
+// Builds the long ticket number from where the problem is: PROPERTY-FLOOR-ROOM-ROOMTYPE-CATEGORY-8 random digits
+// e.g. SUN-F02-R204-S3-PLM-48291037  (Sunrise PG, floor 2, room R204, shareable for 3, plumbing)
+// A ticket that isn't about one room uses GEN for the room and floor parts.
+const code = (v: string, len: number, fallback: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, len) || fallback;
+export function makeTicketCode(p: {
+  propertyName: string; category: string;
+  room?: { label: string; floor: number | null; roomType: string | null; capacity: number } | null;
+}) {
+  const floor = p.room?.floor == null ? "GEN" : `F${String(p.room.floor).padStart(2, "0")}`;
+  const room = p.room ? code(p.room.label, 6, "ROOM") : "GEN";
+  const type = p.room ? `${code(p.room.roomType ?? "", 1, "X")}${p.room.capacity}` : "GEN";
+  const random = String(randomInt(0, 100_000_000)).padStart(8, "0");
+  return [code(p.propertyName, 3, "PRP"), floor, room, type, code(p.category, 3, "OTH"), random].join("-");
 }
 
 export async function superAdminEmails() {
