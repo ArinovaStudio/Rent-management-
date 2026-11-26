@@ -13,7 +13,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   const doc = await prisma.propertyCoOwnerDocument.findUnique({
     where: { id },
-    include: { propertyCoOwner: { include: { property: { select: { ownerId: true } } } } },
+    select: {
+      id: true, path: true, mimeType: true,
+      propertyCoOwner: {
+        select: { userId: true, property: { select: { ownerId: true } } },
+      },
+    },
   });
   const allowed = !!doc && (
     me.role === "SUPER_ADMIN" ||

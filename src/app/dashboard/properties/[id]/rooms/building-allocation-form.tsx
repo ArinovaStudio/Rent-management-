@@ -114,7 +114,7 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
             <div className="mx-auto max-w-lg space-y-4 rounded-3xl bg-primary/10 p-6 text-center">
               <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground"><Check className="h-6 w-6" /></span>
               <p className="text-lg font-medium">{links.length === 0 ? "Person added" : links.length === 1 ? "Person allocated" : `${links.length} allocations created`}</p>
-              <p className="text-sm text-muted-foreground">{links.length === 0 ? "This person shares a flat that already has a main tenant, so they use that tenant's link." : "Share each link with the main tenant of that flat. Anyone sharing the flat uses the same link."}</p>
+              <p className="text-sm text-muted-foreground">{links.length === 0 ? "This person shares a flat that already has a main tenant, so they use that tenant's link." : "We've emailed them their private link(s) with the property details. Anyone sharing the flat uses the same link."}</p>
               <ul className="space-y-2 text-left">
                 {links.map((l) => (
                   <li key={l.url} className="flex items-center justify-between gap-3 rounded-2xl bg-background px-4 py-3 text-sm">
@@ -179,7 +179,7 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className={lbl}><span className="font-medium">Full name</span><input className="field" name="fullName" required /></label>
                   <label className={lbl}><span className="font-medium">Phone number</span><input className="field" name="phone" type="tel" required /></label>
-                  <label className={lbl}><span className="font-medium">Email (optional)</span><input className="field" name="email" type="email" /></label>
+                  <label className={lbl}><span className="font-medium">Email</span><input className="field" name="email" type="email" required /></label>
                   <label className={lbl}><span className="font-medium">Move-in date</span><input className="field" name="moveInDate" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} /></label>
                   <label className={lbl}><span className="font-medium">Security deposit per flat (₹)</span><input className="field" name="securityDeposit" type="number" min="0" defaultValue="0" /></label>
                 </div>

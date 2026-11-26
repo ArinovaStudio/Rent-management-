@@ -4,7 +4,7 @@ import { AlertCircle, BedDouble, Building2, Clock, Plus } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageProperties } from "@/lib/permissions";
-import { getVerificationStatus, SMS_VERIFICATION_ENABLED, STATUS_HELP, STATUS_LABEL } from "@/lib/owner-status";
+import { SMS_VERIFICATION_ENABLED, STATUS_HELP, STATUS_LABEL } from "@/lib/owner-status";
 import { propertiesBase } from "@/lib/routes";
 import { issueScope } from "@/lib/issues";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
@@ -29,7 +29,7 @@ export default async function Dashboard() {
   const issueWhere = issueScope(me);
   const openWhere = { ...issueWhere, status: { in: ["OPEN", "IN_PROGRESS"] as ("OPEN" | "IN_PROGRESS")[] } };
 
-  const [profile, properties, allocations, openCount, openIssues, verification] = await Promise.all([
+  const [profile, properties, allocations, openCount, openIssues] = await Promise.all([
     // `me` is already the full user row, so only the owner profile is fetched here (not the user a second time)
     prisma.ownerProfile.findUnique({ where: { userId: me.id } }),
     prisma.property.findMany({
@@ -45,10 +45,9 @@ export default async function Dashboard() {
       orderBy: { createdAt: "desc" },
       take: 4,
     }),
-    getVerificationStatus(me.id),
   ]);
   const base = propertiesBase(me.role);
-  const canAdd = !isManager && canManageProperties(me.role, verification);
+  const canAdd = !isManager && canManageProperties(me.role, profile?.verificationStatus ?? null);
   const live = properties.filter((p) => p.status === "APPROVED").length;
   const waiting = properties.filter((p) => p.status === "PENDING" || p.status === "NEEDS_MORE_INFO").length;
 

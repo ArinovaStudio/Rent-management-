@@ -9,7 +9,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!me) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
 
   const { id } = await params;
-  const target = await prisma.user.findUnique({ where: { id } });
+  const target = await prisma.user.findUnique({ where: { id }, select: { id: true, role: true, createdById: true } });
   if (!target) return NextResponse.json({ error: "User not found." }, { status: 404 });
 
   if (!canDelete(me, target)) {

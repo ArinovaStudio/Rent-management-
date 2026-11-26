@@ -2,7 +2,7 @@
 import { type ReactNode, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertCircle, Building2, ClipboardCheck, Contact, Inbox, LayoutDashboard, LogOut, Mail, PanelLeft, ShieldCheck, UserCircle, Users } from "lucide-react";
+import { AlertCircle, Building2, ClipboardCheck, Contact, Inbox, LayoutDashboard, LogOut, Mail, PanelLeft, ShieldCheck, UserCircle } from "lucide-react";
 import { propertiesBase } from "@/lib/routes";
 import QueuePopup from "./QueuePopup";
 import Toaster from "./Toaster";
@@ -13,18 +13,18 @@ const SIGN_OUT_URL = "/api/auth/logout";
 type Item = { title: string; url: string; icon: typeof Inbox; superOnly?: boolean; soon?: boolean; hideFor?: string[] };
 
 // Items marked `soon` are Najm sections we copied for layout only; wire them up (or delete them) later.
+// Managers / co-owners are created from the property form, so there is no separate Users nav item.
 const NAV: Item[] = [
   { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
   { title: "Properties", url: "/dashboard/properties", icon: Building2 },
-  { title: "Users", url: "/dashboard/users", icon: Users, hideFor: ["PROPERTY_MANAGER"] },
   { title: "My requests", url: "/dashboard/requests", icon: Inbox, hideFor: ["SUPER_ADMIN", "PROPERTY_MANAGER"] },
   { title: "Issues", url: "/dashboard/issues", icon: AlertCircle },
   { title: "Profile", url: "/dashboard/profile", icon: UserCircle },
   { title: "Property approvals", url: "/admin/approvals", icon: ClipboardCheck, superOnly: true },
   { title: "KYC reviews", url: "/admin/kyc", icon: ShieldCheck, superOnly: true },
-  { title: "Enquiries", url: "#", icon: Inbox, soon: true },
-  { title: "Contacts", url: "#", icon: Contact, soon: true },
-  { title: "Subscribers", url: "#", icon: Mail, soon: true },
+  // { title: "Enquiries", url: "#", icon: Inbox, soon: true },
+  // { title: "Contacts", url: "#", icon: Contact, soon: true },
+  // { title: "Subscribers", url: "#", icon: Mail, soon: true },
 ];
 
 export function AdminShell({ role, name, children }: { role: string; name?: string; children: ReactNode }) {
@@ -114,7 +114,7 @@ export function PageHeader({ title, sub, action }: { title: string; sub?: ReactN
 }
 
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`min-w-0 rounded-[1.75rem] bg-background p-5 md:p-6 ${className}`}>{children}</div>;
+  return <div className={`w-full min-w-0 rounded-[1.75rem] bg-background p-5 md:p-6 ${className}`}>{children}</div>;
 }
 
 export const STATUS_STYLE: Record<string, string> = {

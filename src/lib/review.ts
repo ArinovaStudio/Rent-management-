@@ -31,7 +31,13 @@ const OWNER_TARGET = {
 export async function reviewOwner(adminId: string, profileId: string, action: ReviewAction, note: string): Promise<ReviewResult> {
   if (NEEDS_NOTE.includes(action) && !note) return fail(NOTE_ERROR[action]);
 
-  const profile = await prisma.ownerProfile.findUnique({ where: { id: profileId }, include: { user: true } });
+  const profile = await prisma.ownerProfile.findUnique({
+    where: { id: profileId },
+    select: {
+      id: true, legalName: true, verificationStatus: true, onboardingCompletedAt: true, phoneVerifiedAt: true,
+      user: { select: { email: true, emailVerifiedAt: true } },
+    },
+  });
   if (!profile) return fail("Application not found.", 404);
   const from = profile.verificationStatus;
   const to = OWNER_TARGET[action];
@@ -84,12 +90,17 @@ export async function reviewProperty(adminId: string, propertyId: string, action
   if (action === "RESTRICT") return fail("Invalid action.");
   if (NEEDS_NOTE.includes(action) && !note) return fail(action === "REJECT" ? "Give a reason for rejecting." : NOTE_ERROR[action]);
 
-  const property = await prisma.property.findUnique({ where: { id: propertyId }, include: { owner: true } });
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { id: true, name: true, status: true, owner: { select: { email: true } } },
+  });
   if (!property) return fail("Property not found.", 404);
   const from = property.status;
   const to = PROPERTY_TARGET[action];
   // if (from === to) return fail("The property is already in that state.", 409);
   if (from === to && action !== "REQUEST_INFO") return fail("The property is already in that state.", 409);
+  // An approved property is live. More information can't be requested for it.
+  if (from === "APPROVED" && action === "REQUEST_INFO") return fail("This property is already approved, so more information can't be requested.", 409);
 
   const now = new Date();
   const changed = await prisma.$transaction(async (tx) => {
@@ -102,7 +113,7 @@ export async function reviewProperty(adminId: string, propertyId: string, action
       data: { subjectType: "PROPERTY", subjectId: propertyId, actorId: adminId, action, fromStatus: from, toStatus: to, note: note || null },
     });
     return true;
-  });
+  }, { maxWait: 10_000, timeout: 20_000 }); // the default 5 s is too short when the database is slow
   if (!changed) return fail("This property was just changed by someone else. Reload and try again.", 409);
 
   const n = property.name;

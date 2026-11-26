@@ -27,19 +27,24 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
   if (!me) redirect("/login");
 
   const { id } = await params;
+  // Lean select: only fields this page renders. Bills are not shown here (ledger owns those).
   const property = await prisma.property.findUnique({
     where: { id },
-    include: {
+    select: {
+      id: true, name: true, type: true, sharing: true, floors: true, isActive: true, inactiveNote: true, ownerId: true,
       rooms: {
         orderBy: { createdAt: "asc" },
-        include: {
+        select: {
+          id: true, label: true, capacity: true, ac: true, rent: true, floor: true, roomType: true,
+          bedrooms: true, isActive: true, inactiveNote: true,
           allocations: {
             where: { status: "ACTIVE" },
-            include: {
-              _count: { select: { documents: true } }, // only the count is shown
-              bills: { select: { id: true, type: true, period: true, amount: true, note: true, paid: true }, orderBy: { period: "desc" } },
-            },
             orderBy: { createdAt: "desc" },
+            select: {
+              id: true, fullName: true, phone: true, email: true, moveInDate: true, monthlyRent: true,
+              floorNumber: true, roomCategory: true, accessToken: true, isHousemate: true, createdAt: true,
+              _count: { select: { documents: true } },
+            },
           },
         },
       },
@@ -59,7 +64,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
   const liveRooms = property.rooms.filter((r) => r.isActive);
   const { cap: capacity, occ: occupied, full, unlimited } = occupancy(property, liveRooms);
   const available = Math.max(0, capacity - occupied);
-  const name = (me as unknown as { name?: string }).name ?? "Account";
+  const name = me.name ?? "Account";
 
   // ---- Floor -> category -> beds / occupied (a flat has just one "floor") ----
   const floorNos = [...new Set(property.rooms.map((r) => r.floor ?? 0))].sort((a, b) => a - b);

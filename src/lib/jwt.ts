@@ -10,7 +10,7 @@ export async function signAccessToken(userId: string, role: Role, name?: string)
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setIssuedAt()
-    .setExpirationTime("15m")
+    .setExpirationTime("2d")
     .sign(secret());
 }
 

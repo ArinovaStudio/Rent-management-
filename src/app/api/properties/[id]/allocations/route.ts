@@ -5,27 +5,80 @@ import { getCurrentUser } from "@/lib/current-user";
 import { checkFile, saveFile } from "@/lib/uploads";
 import { canOperateProperty } from "@/lib/property-access";
 import { roomFloor } from "@/lib/room-category";
+import { notify } from "@/lib/mailer";
 
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status });
+const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+const TYPE_LABEL: Record<string, string> = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment", BUILDING: "Building" };
+
+// Welcome email with the private resident link and a short property summary. Best effort: never fails the allocation.
+async function emailTenantWelcome(opts: {
+  to: string;
+  fullName: string;
+  property: { name: string; type: string; address: string; city: string; sharing: boolean };
+  links: { label: string; url: string; rent: number }[];
+  moveInDate: Date;
+  origin: string;
+}) {
+  const { to, fullName, property: p, links, moveInDate, origin } = opts;
+  if (!to || links.length === 0) return;
+  const type = `${TYPE_LABEL[p.type] ?? p.type}${p.sharing && p.type !== "PG" && p.type !== "BUILDING" ? " (sharing)" : ""}`;
+  const moveIn = moveInDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  const linkLines =
+    links.length === 1
+      ? [`Your private resident link (use this to see rent, bills and documents):`, `${origin}${links[0].url}`]
+      : [
+          "Your private resident links (one per flat — use these to see rent, bills and documents):",
+          ...links.flatMap((l) => [`· ${l.label}: ${origin}${l.url}`]),
+        ];
+  const unitLines = links.map((l) => `· ${l.label}${l.rent > 0 ? ` · ${inr(l.rent)} / month` : ""}`);
+  const lines = [
+    `Hi ${fullName},`,
+    "",
+    `You have been allocated as a tenant at ${p.name}. Keep this email — it has your private link and the key details.`,
+    "",
+    ...linkLines,
+    "",
+    "Property details",
+    `Name: ${p.name}`,
+    `Type: ${type}`,
+    `Address: ${p.address}, ${p.city}`,
+    `Move-in date: ${moveIn}`,
+    ...(unitLines.length ? ["", "Your allocation", ...unitLines] : []),
+    "",
+    "If you were not expecting this, contact the property owner or manager.",
+  ];
+  await notify(to, `Welcome to ${p.name} — your resident link`, lines.join("\n"));
+}
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const me = await getCurrentUser();
   if (!me) return fail("Not signed in.", 401);
 
   const { id: propertyId } = await params;
-  const property = await prisma.property.findUnique({ where: { id: propertyId } });
+  // Auth + welcome email + roomFloor only need these columns — not the full property row.
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: {
+      id: true, ownerId: true, isActive: true, type: true, sharing: true, floors: true,
+      name: true, address: true, city: true,
+    },
+  });
   if (!property || !(await canOperateProperty(me, property))) return fail("You can't manage this property.", 403);
 
   if (!property.isActive) return fail("This property is marked inactive (for example under construction). Switch it On before allocating residents.");
+  // Local copy so nested helpers keep the narrowed type (TS doesn't retain narrowing in closures).
+  const prop = property;
+  const emailProperty = { name: prop.name, type: prop.type, address: prop.address, city: prop.city, sharing: prop.sharing };
 
   const fd = await req.formData().catch(() => null);
   if (!fd) return fail("Invalid form data.");
 
-  const isPg = property.type === "PG";
-  const isBuilding = property.type === "BUILDING";
+  const isPg = prop.type === "PG";
+  const isBuilding = prop.type === "BUILDING";
   // PG and flats rented room by room: the admin picks a category (capacity + AC), and a floor for PGs.
   // A flat rented as a whole goes to one tenant, with the number of people who will live in it.
-  const byCategory = isPg || (property.sharing && !isBuilding);
+  const byCategory = isPg || (prop.sharing && !isBuilding);
   const capacity = Number(fd.get("capacity"));
   const ac = String(fd.get("ac") ?? "") === "true";
   const floor = Number(fd.get("floor"));
@@ -38,15 +91,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const files = fd.getAll("documents").filter((f): f is File => f instanceof File && f.size > 0);
 
-  if (!fullName || !phone || !Number.isFinite(moveInDate.getTime())) {
-    return fail("Name, phone and a valid move-in date are required.");
+  if (!fullName || !phone || !email || !Number.isFinite(moveInDate.getTime())) {
+    return fail("Name, phone, email and a valid move-in date are required.");
   }
   if (byCategory) {
     if (!Number.isInteger(capacity) || capacity < 1) return fail("Choose a room category.");
     if (isPg && !Number.isInteger(floor)) return fail("Choose a floor.");
   }
   if (!Number.isInteger(securityDeposit) || securityDeposit < 0) return fail("Enter a valid security deposit.");
-  if (email && !/^\S+@\S+\.\S+$/.test(email)) return fail("Enter a valid email address.");
+  if (!/^\S+@\S+\.\S+$/.test(email)) return fail("Enter a valid email address.");
   if (files.length > 8) return fail("Upload a maximum of 8 documents.");
   for (const file of files) {
     const error = checkFile(file, "doc");
@@ -71,10 +124,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const created = await prisma.$transaction(async (tx) => {
         const rooms = await tx.room.findMany({
           where: { propertyId, id: { in: ids }, isActive: true },
-          include: { allocations: { where: { status: "ACTIVE" }, select: { isHousemate: true } } },
+          select: {
+            id: true, label: true, rent: true, roomType: true, floor: true, bedrooms: true,
+            allocations: { where: { status: "ACTIVE" }, select: { isHousemate: true } },
+          },
         });
         if (rooms.length !== ids.length) throw new Error("ROOM_NOT_FOUND");
-        const out: { id: string; accessToken: string; fullName: string; flat: string; primary: boolean; main: boolean }[] = [];
+        const out: { id: string; accessToken: string; fullName: string; flat: string; primary: boolean; main: boolean; rent: number }[] = [];
         for (const f of flatsIn) {
           const room = rooms.find((r) => r.id === f.roomId)!;
           const shareable = room.roomType === "SHAREABLE";
@@ -84,17 +140,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           const hasMain = room.allocations.some((a) => !a.isHousemate);
           const category = shareable ? "Shareable flat" : "Single flat";
           const base = { roomId: room.id, moveInDate, occupants: 1, roomCategory: category, floorNumber: room.floor, roomLabel: room.label, roomBhk: room.bedrooms };
+          const rent = hasMain ? 0 : room.rent;
           const tenant = await tx.allocation.create({
-            data: { ...base, fullName, phone, email: email || null, monthlyRent: hasMain ? 0 : room.rent, securityDeposit: hasMain ? 0 : securityDeposit, isHousemate: hasMain, accessToken: randomBytes(32).toString("hex") },
+            data: { ...base, fullName, phone, email, monthlyRent: rent, securityDeposit: hasMain ? 0 : securityDeposit, isHousemate: hasMain, accessToken: randomBytes(32).toString("hex") },
             select: { id: true, accessToken: true, fullName: true },
           });
-          out.push({ ...tenant, flat: room.label, primary: true, main: !hasMain });
+          out.push({ ...tenant, flat: room.label, primary: true, main: !hasMain, rent });
           for (const r of f.residents) {
             const a = await tx.allocation.create({
               data: { ...base, fullName: r.fullName, phone: r.phone, email: r.email || null, monthlyRent: 0, securityDeposit: 0, isHousemate: true, accessToken: randomBytes(32).toString("hex") },
               select: { id: true, accessToken: true, fullName: true },
             });
-            out.push({ ...a, flat: room.label, primary: false, main: false });
+            out.push({ ...a, flat: room.label, primary: false, main: false, rent: 0 });
           }
         }
         return { out };
@@ -107,7 +164,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           await prisma.residentDocument.createMany({ data: docs });
         }
       }
-      return NextResponse.json({ links: created.out.filter((a) => a.main).map((a) => ({ name: a.fullName, flat: a.flat, url: `/resident/${a.accessToken}` })) }, { status: 201 });
+      const mains = created.out.filter((a) => a.main);
+      const origin = (process.env.APP_URL ?? new URL(req.url).origin).replace(/\/$/, "");
+      await emailTenantWelcome({
+        to: email,
+        fullName,
+        property: emailProperty,
+        links: mains.map((a) => ({ label: a.flat, url: `/resident/${a.accessToken}`, rent: a.rent })),
+        moveInDate,
+        origin,
+      });
+      return NextResponse.json({ links: mains.map((a) => ({ name: a.fullName, flat: a.flat, url: `/resident/${a.accessToken}` })) }, { status: 201 });
     } catch (error) {
       const msg = error instanceof Error ? error.message : "";
       if (msg.startsWith("FLAT_TAKEN:")) return fail(`${msg.slice(11)} is already rented. Refresh and pick another flat.`, 409);
@@ -129,7 +196,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (byCategory) {
           const candidates = await tx.room.findMany({
             where: { propertyId, isActive: true, capacity, ac, ...(isPg ? { floor } : {}) },
-            include: { _count: { select: { allocations: { where: { status: "ACTIVE" } } } } },
+            select: {
+              id: true, rent: true, capacity: true, ac: true, label: true, bedrooms: true, floor: true, roomType: true,
+              _count: { select: { allocations: { where: { status: "ACTIVE" } } } },
+            },
             orderBy: { createdAt: "asc" },
           });
           if (candidates.length === 0) throw new Error("CATEGORY_NOT_FOUND");
@@ -145,7 +215,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           // The first person is the tenant who pays the rent; later people are housemates (rent covered, ₹0).
           const units = await tx.room.findMany({
             where: { propertyId, isActive: true },
-            include: { _count: { select: { allocations: { where: { status: "ACTIVE" } } } } },
+            select: {
+              id: true, rent: true, capacity: true, ac: true, label: true, bedrooms: true, floor: true, roomType: true,
+              _count: { select: { allocations: { where: { status: "ACTIVE" } } } },
+            },
             orderBy: { createdAt: "asc" },
           });
           if (units.length === 0) throw new Error("ROOM_NOT_FOUND");
@@ -161,7 +234,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const category = isPg
           ? `${room.capacity}-seater${room.ac ? " AC" : ""}`
-          : property.sharing
+          : prop.sharing
             ? `${room.capacity}-sharing${room.ac ? " AC" : ""}`
             : "Entire flat";
 
@@ -170,7 +243,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             roomId: room.id,
             fullName,
             phone,
-            email: email || null,
+            email,
             moveInDate,
             occupants: 1,
             monthlyRent: rentToPay, // always the rent set for this category (or the whole flat) while creating the property
@@ -179,10 +252,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             roomCategory: category,
             roomLabel: room.label,
             roomBhk: room.bedrooms,
-            floorNumber: roomFloor(property, room),
+            floorNumber: roomFloor(prop, room),
             accessToken,
           },
-          select: { id: true, accessToken: true, fullName: true, isHousemate: true },
+          select: { id: true, accessToken: true, fullName: true, isHousemate: true, monthlyRent: true, roomCategory: true, roomLabel: true },
         });
       },
       { isolationLevel: "Serializable" }
@@ -196,6 +269,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }))
     );
     if (documents.length) await prisma.residentDocument.createMany({ data: documents });
+
+    if (!allocation.isHousemate) {
+      const origin = (process.env.APP_URL ?? new URL(req.url).origin).replace(/\/$/, "");
+      const unit = allocation.roomLabel ?? allocation.roomCategory ?? "Unit";
+      await emailTenantWelcome({
+        to: email,
+        fullName,
+        property: emailProperty,
+        links: [{ label: unit, url: `/resident/${allocation.accessToken}`, rent: allocation.monthlyRent }],
+        moveInDate,
+        origin,
+      });
+    }
 
     return NextResponse.json({ allocation, housemate: allocation.isHousemate, residentUrl: allocation.isHousemate ? null : `/resident/${allocation.accessToken}` }, { status: 201 });
   } catch (error) {

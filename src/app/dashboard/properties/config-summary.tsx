@@ -1,4 +1,5 @@
 import { catKey, catName, floorAttachedRooms, floorBaths, floorCommon, sortCats, type PgPlan } from "@/lib/pg-config";
+import type { ReactNode } from "react";
 import type { CategoryMedia, RoomState } from "./room-types";
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
@@ -85,8 +86,8 @@ export function PropertySummary({ isPG, floorCount, declaredRooms, rooms, cards,
 }
 
 // PG: step 2 (floors) and the category photos. Rooms are generated from the floor setup, so there is nothing to edit per room.
-export function PgRoomsCard({ floorCount, hasCategories, rooms, categoryMedia, issues, onFloors, onMedia }: {
-  floorCount: number; hasCategories: boolean; rooms: RoomState[]; categoryMedia: CategoryMedia[]; issues: string[]; onFloors: () => void; onMedia: () => void;
+export function PgRoomsCard({ floorCount, hasCategories, rooms, categoryMedia, issues, onFloors, onMedia, children }: {
+  floorCount: number; hasCategories: boolean; rooms: RoomState[]; categoryMedia: CategoryMedia[]; issues: string[]; onFloors: () => void; onMedia: () => void; children?: ReactNode;
 }) {
   const catIds = new Set(rooms.map((r) => Number(r.capacity)));
   const hint = floorCount < 1 ? "Enter the number of floors in Specifications first."
@@ -105,6 +106,7 @@ export function PgRoomsCard({ floorCount, hasCategories, rooms, categoryMedia, i
           <button type="button" onClick={onMedia} disabled={rooms.length === 0} className={softBtn}>Category photos & videos</button>
         </div>
       </div>
+      {children}
       {issues.length > 0 && rooms.length > 0 && <p className="mt-3 rounded-xl bg-destructive/10 px-4 py-2 text-sm text-destructive">{issues[0]}</p>}
     </div>
   );

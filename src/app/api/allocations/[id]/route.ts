@@ -2,8 +2,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-// import { canEditProperty } from "@/lib/permissions";
-import { canOperateProperty } from "@/lib/property-access";
+import { canOperateProperty, operableAllocationSelect } from "@/lib/property-access";
 
 export async function PATCH(
   _req: Request,
@@ -19,11 +18,7 @@ export async function PATCH(
 
   const allocation = await prisma.allocation.findUnique({
     where: { id },
-    include: {
-      room: {
-        include: { property: true },
-      },
-    },
+    select: operableAllocationSelect,
   });
 
   if (!allocation) {

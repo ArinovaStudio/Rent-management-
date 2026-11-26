@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getSessionUser } from "@/lib/current-user";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip } from "@/app/admin/ui";
 import { CATEGORY_LABEL, PRIORITY_LABEL, ROLE_LABEL, STATUS_LABEL, canSeeIssue, canUpdateIssue, priorityTone, statusTone, ticketLabel, withWho } from "@/lib/issues";
@@ -16,9 +16,9 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default async function TicketPage({ params }: { params: Promise<{ id: string }> }) {
-  const me = await getCurrentUser();
+  const me = await getSessionUser();
   if (!me) redirect("/login");
-  const name = (me as unknown as { name?: string }).name ?? "Account";
+  const name = me.name ?? "Account";
   const { id } = await params;
 
   const issue = await prisma.issue.findUnique({

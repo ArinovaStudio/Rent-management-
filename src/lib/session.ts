@@ -6,8 +6,8 @@ import { signAccessToken, type Role } from "./jwt";
 
 export const ACCESS_COOKIE = "access_token";
 export const REFRESH_COOKIE = "refresh_token";
-const ACCESS_MAX_AGE = 15 * 60;
-const REFRESH_MAX_AGE = 7 * 24 * 60 * 60;
+const ACCESS_MAX_AGE = 2 * 24 * 60 * 60;
+const REFRESH_MAX_AGE = 15 * 24 * 60 * 60;
 
 const sha256 = (v: string) => crypto.createHash("sha256").update(v).digest("hex");
 const secure = process.env.NODE_ENV === "production";
@@ -52,7 +52,10 @@ export async function startSession(res: NextResponse, user: SessionUser) {
 
 // Rotation: the presented token is marked used and replaced by a new one in the same family.
 // Presenting an already-used or revoked token revokes the whole family (theft signal).
-export async function rotateSession(res: NextResponse, presented: string): Promise<boolean> {
+
+const REUSE_GRACE_MS = 30_000;
+
+export async function rotateSession(res: NextResponse, presented: string): Promise<boolean | "concurrent"> {
   const row = await prisma.refreshToken.findUnique({
     where: { tokenHash: sha256(presented) },
     include: { user: true },
@@ -60,6 +63,7 @@ export async function rotateSession(res: NextResponse, presented: string): Promi
   if (!row) return false;
 
   if (row.usedAt || row.revokedAt) {
+    if (!row.revokedAt && row.usedAt && Date.now() - row.usedAt.getTime() < REUSE_GRACE_MS) return "concurrent";
     await prisma.refreshToken.updateMany({
       where: { familyId: row.familyId, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -77,7 +81,7 @@ export async function rotateSession(res: NextResponse, presented: string): Promi
     if (claimed.count === 0) return null;
     return createRefreshToken(tx, row.userId, row.familyId);
   });
-  if (!next) return false;
+  if (!next) return "concurrent";
 
   await setAuthCookies(res, { id: row.user.id, role: row.user.role, name: row.user.name }, next);
   return true;

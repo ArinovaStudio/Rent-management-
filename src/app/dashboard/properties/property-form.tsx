@@ -3,14 +3,14 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSoftRefresh } from "@/lib/use-soft-refresh";
-import { ArrowLeft, Bath as BathIcon, BedDouble, ChevronLeft, ChevronRight, FileText, ImagePlus, MapPin, Maximize, Plus, Star, X } from "lucide-react";
+import { ArrowLeft, Bath as BathIcon, BedDouble, ChevronLeft, ChevronRight, Eye, FileText, ImagePlus, MapPin, Maximize, Plus, Star, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
 import MapPicker, { MAP_UPDATE_EVENT } from "./map-picker";
 import NearbyPlaces from "./nearby-places";
-import { F, FileDrop, Section, SavingOverlay, TagPicker, ToggleRow, toPairs, type Pair } from "./property-sections";
+import { F, FileDrop, Section, SavingOverlay, TagPicker, ToggleRow, shortName, toPairs, type Pair } from "./property-sections";
 import {
-  FURNISHING, FACING, AMENITY_PRESETS, FEATURE_PRESETS,
-  PLATFORM_LISTER, label, type ListingClient, type ListedBy
+  AMENITY_PRESETS, FEATURE_PRESETS, PG_AMENITY_PRESETS, PG_FEATURE_PRESETS,
+  type ListingClient, type ListedBy
 } from "@/lib/property-fields";
 import { canWriteField } from "@/lib/permissions";
 import type { Role } from "@/lib/jwt";
@@ -24,6 +24,9 @@ import { catKey, floorBaths, fromStored, planIssues, sameCat, splitEvenly, toSto
 import BedroomConfigModal from "./bedroom-config";
 import { BedroomsCard, PgRoomsCard, PropertySummary } from "./config-summary";
 import { BuildingFlatsCard, BuildingFlatsModal, flatIssue } from "./building-flats";
+import { SpecificationsCard, SpecificationsModal, type Specs } from "./specifications";
+import OwnerTeamSection from "./owner-team-section";
+import type { TeamMember } from "./add-team-member-modal";
 
 type GalleryItem = { key: string; src: string; id?: string; file?: File };
 type PType = "PG" | "APARTMENT" | "FLAT" | "BUILDING";
@@ -44,7 +47,7 @@ export type InitialProperty = {
   roomsPerFloor?: number | null;
   pgConfig?: unknown;
   sharing: boolean;
-  rooms: { id: string; label: string; capacity: number; ac: boolean; rent: number; occupied: number; floor: number | null; roomType?: string | null; sizeSqm?: number | null; bathroomAttached?: boolean; bathroomAreaSqm?: number | null; bedrooms?: number | null; bathrooms?: number | null; furnishing?: string | null; images?: string[] }[];
+  rooms: { id: string; label: string; capacity: number; ac: boolean; rent: number; occupied: number; floor: number | null; roomType?: string | null; sizeSqm?: number | null; bathroomAttached?: boolean; bathroomAreaSqm?: number | null; bedrooms?: number | null; bathrooms?: number | null; furnishing?: string | null; features?: string[]; images?: string[] }[];
   images: { id: string; path: string }[];
   categoryMedia?: { id: string; capacity: number; mediaType: "IMAGE" | "VIDEO"; path: string; originalName: string }[];
   documents: { id: string; name: string; path: string }[];
@@ -61,11 +64,14 @@ const TYPE_OPTIONS: [PType, string, string][] = [
   ["BUILDING", "Building", "Several flats across floors, each rented on its own"],
 ];
 
-export default function PropertyForm({ initial, owners, role, listedBy }: {
+export default function PropertyForm({ initial, owners, role, listedBy, propertyId, coOwners, managers }: {
   initial?: InitialProperty;
   owners?: { id: string; name: string }[];
   role: Role;
   listedBy?: ListedBy | null;
+  propertyId?: string;
+  coOwners?: { userId: string; name: string; email: string; documents: number }[];
+  managers?: { id: string; name: string; email: string }[];
 }) {
   const router = useRouter();
   const refresh = useSoftRefresh();
@@ -95,13 +101,14 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
       bathArea: r.bathroomAreaSqm != null ? String(r.bathroomAreaSqm) : "",
       photos: (r.images ?? []).map((p) => ({ key: p, path: p, src: `/api/uploads/${p}` })),
       bhk: r.bedrooms != null ? String(r.bedrooms) : "", baths: r.bathrooms != null ? String(r.bathrooms) : "", furnishing: r.furnishing ?? "",
+      features: r.features ?? [],
     }))
   );
   const [sharedRooms, setRooms] = useState<RoomState[]>(initialRooms);
   // PG plan: categories offered (with rent) and, per floor, rooms / bathrooms / categories / rent adjustment
   const [plan, setPlan] = useState<PgPlan>(() => fromStored(initial?.pgConfig) ?? planFromRooms(initialRooms));
   // Which configuration popup is open (floor generator, category media, or the apartment/flat room cards)
-  const [modal, setModal] = useState<null | "floors" | "media" | "bedrooms" | "flats">(null);
+  const [modal, setModal] = useState<null | "floors" | "media" | "bedrooms" | "flats" | "specs">(null);
   // Building: one entry per flat (label "Flat 101", floor, roomType SINGLE | SHAREABLE, no people limit for shareable)
   const [flats, setFlats] = useState<RoomState[]>(initial?.type === "BUILDING" ? initialRooms : []);
   const [categoryMedia, setCategoryMedia] = useState<CategoryMedia[]>(() =>
@@ -141,12 +148,20 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const [removeDocs, setRemoveDocs] = useState<string[]>([]);
   const [docRows, setDocRows] = useState<number[]>([]);
   const [ownerId, setOwnerId] = useState("");
-  const [coOwnerId, setCoOwnerId] = useState("");
+  const [pendingTeam, setPendingTeam] = useState<TeamMember[]>([]);
   // UI-only state for the live card preview
   const [title, setTitle] = useState(initial?.name ?? "");
   const [short, setShort] = useState(L?.shortDescription ?? "");
   const [beds, setBeds] = useState(initial?.bedrooms != null ? String(initial.bedrooms) : "");
   const [baths, setBaths] = useState(initial?.bathrooms != null ? String(initial.bathrooms) : "");
+  // The rest of the specifications. They are edited in the Specifications popup (outside the <form>),
+  // so they are kept here and added to the form data when saving.
+  const [parking, setParking] = useState(L?.parkingSpaces != null ? String(L.parkingSpaces) : "");
+  const [furnishing, setFurnishing] = useState(L?.furnishing ?? "");
+  const [facing, setFacing] = useState(L?.facing ?? "");
+  const [titleDeed, setTitleDeed] = useState(L?.titleDeedNumber ?? "");
+  const [yearBuilt, setYearBuilt] = useState(L?.yearBuilt != null ? String(L.yearBuilt) : "");
+  const [developer, setDeveloper] = useState(L?.developer ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -163,8 +178,6 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const minRent = rents.length ? Math.min(...rents) : 0;
   const maxRent = rents.length ? Math.max(...rents) : 0;
   const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
-  const ownerName = owners?.find((o) => o.id === ownerId)?.name;
-
   const addPhotos = (files: FileList | null) => {
     // Copy the files out before the input is cleared: clearing it empties the live FileList,
     // and React may run the state updater after that.
@@ -216,6 +229,12 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
   const saveMedia = (media: CategoryMedia[]) => { setCategoryMedia(media); setModal(null); };
   const saveFlats = (next: RoomState[]) => { setFlats(next); setModal(null); };
   const saveBedrooms = (next: RoomState[]) => { (sharing ? setRooms : setUnitRooms)(next); setModal(null); };
+  const specs: Specs = { bedrooms: beds, bathrooms: baths, floors: floorsN, parking, furnishing, facing, titleDeed, yearBuilt, developer };
+  const saveSpecs = (v: Specs) => {
+    setBeds(v.bedrooms); setBaths(v.bathrooms); setFloorsN(v.floors); setParking(v.parking); setFurnishing(v.furnishing);
+    setFacing(v.facing); setTitleDeed(v.titleDeed); setYearBuilt(v.yearBuilt); setDeveloper(v.developer);
+    setModal(null);
+  };
 
   const personsN = Math.floor(Number(persons)) || 0;
   const wholeCap = 1; // a whole flat is one unit; a shared flat has no people limit, only a head count
@@ -272,7 +291,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     const liveMedia = categoryMedia.filter((m) => cats.includes(m.capacity));
 
     const payload = multiRoom
-      ? rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.occupied, floor: r.floor, roomType: r.roomType, sizeSqm: r.sizeSqm, bathroomAttached: r.bathAttached, bathroomAreaSqm: r.bathArea, bedrooms: r.bhk, bathrooms: r.baths, furnishing: r.furnishing, images: r.photos.filter((p) => p.path).map((p) => p.path) }))
+      ? rooms.map((r) => ({ id: r.id, label: r.label, capacity: r.capacity, ac: r.ac, rent: r.rent, occupied: r.occupied, floor: r.floor, roomType: r.roomType, sizeSqm: r.sizeSqm, bathroomAttached: r.bathAttached, bathroomAreaSqm: r.bathArea, bedrooms: r.bhk, bathrooms: r.baths, furnishing: r.furnishing, features: r.features ?? [], images: r.photos.filter((p) => p.path).map((p) => p.path) }))
       // A single unit's rent is the Rent field (falls back to what was saved before)
       : [{ id: single?.id, label: "Entire property", capacity: wholeCap, ac: false, rent: Number(price) > 0 ? price : String(single?.rent ?? 0), occupied: singleOcc }];
     fd.set("rooms", JSON.stringify(payload));
@@ -283,6 +302,14 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
     if ((flatLike && sharing) || isBuilding) rooms.forEach((r, i) => r.photos.forEach((p) => { if (p.file) fd.append(`roomImages_${i}`, p.file); }));
     fd.set("latitude", lat);
     fd.set("longitude", lng);
+    // Specifications live in a popup outside the form, so they are added here (same fields as before, per property type)
+    fd.set("facing", facing);
+    fd.set("titleDeedNumber", titleDeed);
+    fd.set("yearBuilt", yearBuilt);
+    fd.set("developer", developer);
+    if (flatLike || isBuilding) fd.set("parkingSpaces", parking);
+    if (flatLike) { fd.set("furnishing", furnishing); fd.set("bedrooms", beds); fd.set("bathrooms", baths); }
+    if (isPG || isBuilding || floorsN !== "") fd.set("floors", floorsN);
     // PG rent is per room: the listing price is the lowest room rent
     if (multiRoom) fd.set("price", minRent ? String(minRent) : "");
     // Photos: new files in gallery order, plus the final order and which saved photos were removed
@@ -342,6 +369,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
 
       {modal === "floors" && <FloorGeneratorModal floorCount={floorCount} plan={plan} baseRooms={initialRooms} onSave={saveFloors} onClose={() => setModal(null)} />}
       {modal === "media" && <CategoryMediaModal categories={cats.map((c) => ({ capacity: c, rooms: roomsUsing(c) }))} categoryMedia={categoryMedia} onSave={saveMedia} onClose={() => setModal(null)} />}
+      {modal === "specs" && <SpecificationsModal values={specs} kind={{ flatLike, isPG, isBuilding, sharing }} onSave={saveSpecs} onClose={() => setModal(null)} />}
       {modal === "flats" && <BuildingFlatsModal floorCount={floorCount} flats={flats} onSave={saveFlats} onClose={() => setModal(null)} />}
       {modal === "bedrooms" && <BedroomConfigModal sharing={sharing} cards={sharing ? rooms : unitRooms} declaredRooms={declaredRooms} maxSeats={maxSeats} onSave={saveBedrooms} onClose={() => setModal(null)} />}
 
@@ -452,30 +480,8 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             </F>
           </Section>
 
-          <Section id="specifications" title="Specifications">
-            {flatLike && <F label={sharing ? "Bedrooms (limit for rooms you add)" : "Bedrooms"}><input className="field" name="bedrooms" type="number" min={0} value={beds} onChange={(e) => setBeds(e.target.value)} placeholder="Number of bedrooms" /></F>}
-            {flatLike && <F label="Bathrooms"><input className="field" name="bathrooms" type="number" min={0} value={baths} onChange={(e) => setBaths(e.target.value)} placeholder="Number of bathrooms" /></F>}
-            {isPG || isBuilding
-              ? <F label="Number of floors"><input className="field" name="floors" type="number" min={0} value={floorsN} onChange={(e) => setFloorsN(e.target.value)} /></F>
-              : floorsN !== "" && <input type="hidden" name="floors" value={floorsN} />}
-            {(flatLike || isBuilding) && <F label="Parking spaces in the building"><input className="field" name="parkingSpaces" type="number" min={0} max={100} defaultValue={L?.parkingSpaces ?? ""} /></F>}
-            {flatLike && (
-              <F label="Furnishing">
-                <select className="field" name="furnishing" defaultValue={L?.furnishing ?? ""}>
-                  <option value="">Not specified</option>
-                  {FURNISHING.map((f) => <option key={f} value={f}>{label(f)}</option>)}
-                </select>
-              </F>
-            )}
-            <F label="Facing">
-              <select className="field" name="facing" defaultValue={L?.facing ?? ""}>
-                <option value="">Not specified</option>
-                {FACING.map((f) => <option key={f} value={f}>{f}</option>)}
-              </select>
-            </F>
-            <F label="Title deed number"><input className="field" name="titleDeedNumber" maxLength={50} autoComplete="off" defaultValue={L?.titleDeedNumber ?? ""} /></F>
-            <F label="Year built"><input className="field" name="yearBuilt" type="number" min={1800} max={new Date().getFullYear() + 10} defaultValue={L?.yearBuilt ?? ""} placeholder="e.g. 2022" /></F>
-            <F label="Developer"><input className="field" name="developer" maxLength={120} defaultValue={L?.developer ?? ""} placeholder="Enter developer name" /></F>
+          <Section id="specifications" title="Specifications" hint="Add the property details in the card. What you save is shown here.">
+            <SpecificationsCard values={specs} kind={{ flatLike, isPG, isBuilding, sharing }} onOpen={() => setModal("specs")} />
             {flatLike && <PropertySummary isPG={false} floorCount={0} declaredRooms={declaredRooms} rooms={rooms} cards={sharing ? rooms : unitRooms} beds={beds} baths={baths} plan={plan} />}
           </Section>
 
@@ -491,7 +497,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
               </div>
             )}
             {isBuilding ? (
-              <BuildingFlatsCard floorCount={floorCount} flats={flats} onOpen={() => setModal("flats")} />
+              <BuildingFlatsCard floorCount={floorCount} flats={flats} onOpen={() => setModal("flats")} onChange={setFlats} />
             ) : isPG ? (
               <>
                 <PgCategoriesCard categories={plan.categories} roomsByKey={roomsByKey} onChange={setCategories} />
@@ -526,8 +532,22 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
           </Section>
 
           <Section id="amenities" title="Amenities" hint="Tap to select what applies, or add your own. Add a monthly charge under an amenity, or leave it blank if it is included in the rent.">
-            <TagPicker label="Amenities" presets={AMENITY_PRESETS} value={amenities} onChange={setAmenities} charges={charges} onChargeChange={(k, v) => setCharges((c) => ({ ...c, [k]: v }))} />
-            <TagPicker label="Features & finishes" presets={FEATURE_PRESETS} value={features} onChange={setFeatures} />
+            <TagPicker label="Amenities" presets={isPG ? PG_AMENITY_PRESETS : AMENITY_PRESETS} value={amenities} 
+              onChange={(next) => {
+                setAmenities(next);
+                setCharges((c) => Object.fromEntries(Object.entries(c).filter(([k]) => next.includes(k))));
+              }} 
+              charges={charges} 
+              onChargeChange={
+                (k, v) => setCharges((c) => {
+                  if(v == undefined) {
+                    const { [k] : _ , ...rest} = c;
+                    return rest;
+                  } 
+                  return {...c, [k]: v} 
+                })} />
+            {/* Building flats pick their own features & finishes in the flat card. PGs keep this section with PG choices. */}
+            {!isBuilding && <TagPicker label={isPG ? "Room facilities" : "Features & finishes"} presets={isPG ? PG_FEATURE_PRESETS : FEATURE_PRESETS} value={features} onChange={setFeatures} />}
           </Section>
 
           <Section id="location" title="Location">
@@ -547,52 +567,22 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             <NearbyPlaces rows={nearby} onChange={setNearby} onFocus={setMapFocus} />
           </Section>
 
-          <Section id="listing" title="Listing & visibility">
-            {owners && !editing ? (
-              <>
-                <div className="grid gap-1 rounded-2xl bg-cream p-5 sm:col-span-2">
-                  <p className="font-medium">Listed by {PLATFORM_LISTER}</p>
-                  {ownerName
-                    ? <p className="text-sm">Owned by <strong>{ownerName}</strong></p>
-                    : <p className="text-sm text-muted-foreground">Listed directly by the platform. Assign an owner below if this property belongs to a Property Admin.</p>}
-                </div>
-                <F label="Primary owner (optional)" wide>
-                  <select className="field" name="ownerId" value={ownerId} onChange={(e) => { setOwnerId(e.target.value); if (e.target.value === coOwnerId) setCoOwnerId(""); }}>
-                    <option value="">No owner (platform-owned)</option>
-                    {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                  </select>
-                </F>
-                <F label="Co-owner (optional)" wide>
-                  <select className="field" name="coOwnerId" value={coOwnerId} onChange={(e) => setCoOwnerId(e.target.value)}>
-                    <option value="">No co-owner</option>
-                    {owners.filter((o) => o.id !== ownerId).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                  </select>
-                  <span className="text-xs text-muted-foreground">Choose a registered Property Admin. A primary owner must also be selected before assigning a co-owner.</span>
-                </F>
-              </>
-            ) : (
-              <div className="rounded-2xl bg-cream p-5 sm:col-span-2">
-                {listedBy ? (
-                  <div className="grid gap-1">
-                    <p className="font-medium">{listedBy.title}</p>
-                    {listedBy.subtitle && <p className="text-sm text-muted-foreground">{listedBy.subtitle}</p>}
-                    {listedBy.phone && <p className="text-sm">Phone: {listedBy.phone}</p>}
-                    {listedBy.email && <p className="text-sm">Email: {listedBy.email}</p>}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">After saving, this shows the Property Management Team.</p>
-                )}
-                <p className="mt-3 text-xs text-muted-foreground">Taken from the owner&apos;s account. To change it, update the owner&apos;s profile.</p>
-              </div>
-            )}
-            {!editing && role === "PROPERTY_ADMIN" && (
-              <F label="Co-owner email (optional)" wide>
-                <input className="field" name="coOwnerEmail" type="email" placeholder="coowner@example.com" autoComplete="off" />
-                <span className="text-xs text-muted-foreground">The co-owner must already be a verified Property Admin. They&apos;ll be asked to upload their own proof documents.</span>
-              </F>
-            )}
-            <ToggleRow title="Published" desc="Visible to the public once approved." name="isPublished" defaultChecked={L?.isPublished ?? true} disabled={!can("isPublished")} />
-            <ToggleRow title="Featured property" desc={can("featured") ? "Marks the property as featured. Saved with the property, but no listing page reads it yet." : "Only a Super Admin can change this."} name="featured" defaultChecked={L?.featured ?? false} disabled={!can("featured")} />
+          <Section id="listing" title="Owner Information">
+            <OwnerTeamSection
+              role={role}
+              editing={editing}
+              propertyId={propertyId ?? initial?.id}
+              listedBy={listedBy}
+              owners={owners}
+              ownerId={ownerId}
+              onOwnerIdChange={setOwnerId}
+              pending={pendingTeam}
+              onPendingChange={setPendingTeam}
+              coOwners={coOwners}
+              managers={managers}
+            />
+            {/* <ToggleRow title="Published" desc="Visible to the public once approved." name="isPublished" defaultChecked={L?.isPublished ?? true} disabled={!can("isPublished")} />
+            <ToggleRow title="Featured property" desc={can("featured") ? "Marks the property as featured. Saved with the property, but no listing page reads it yet." : "Only a Super Admin can change this."} name="featured" defaultChecked={L?.featured ?? false} disabled={!can("featured")} /> */}
           </Section>
 
           <Section id="documents" title="Documents" hint="PDF, JPG, PNG or WebP, up to 10 MB each.">
@@ -605,7 +595,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
                 {editing && (
                   <p className="rounded-2xl bg-cream p-4 text-sm sm:col-span-2">
                     {initial?.authorityProof
-                      ? <>On file: <a className="text-primary hover:underline" href={`/api/property-authority/${initial.id}`} target="_blank" rel="noreferrer">{initial.authorityProof.name}</a>. Choose a file only to replace it.</>
+                      ? <>On file: <a className="text-primary hover:underline" href={`/api/property-authority/${initial.id}`} target="_blank" rel="noreferrer"><span title={initial.authorityProof.name}>{shortName(initial.authorityProof.name, 28)}</span></a>. Choose a file only to replace it.</>
                       : "No ownership proof on file."}
                   </p>
                 )}
@@ -615,11 +605,12 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
             )}
 
             {initial && initial.documents.length > 0 && (
-              <ul className="space-y-2 sm:col-span-2">
+              <ul className="min-w-0 space-y-2 sm:col-span-2">
                 {initial.documents.map((d) => (
-                  <li key={d.id} className="flex items-center gap-3 rounded-2xl bg-cream/60 px-4 py-3 text-sm">
+                  <li key={d.id} className="flex min-w-0 items-center gap-3 rounded-2xl bg-cream/60 px-4 py-3 text-sm">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-background text-primary"><FileText className="h-5 w-5" /></span>
-                    <a href={`/api/uploads/${d.path}`} target="_blank" rel="noreferrer" className={`min-w-0 flex-1 truncate hover:underline ${removeDocs.includes(d.id) ? "line-through opacity-60" : ""}`}>{d.name}</a>
+                    <a href={`/api/uploads/${d.path}`} target="_blank" rel="noreferrer" title={d.name} className={`min-w-0 flex-1 truncate hover:underline ${removeDocs.includes(d.id) ? "line-through opacity-60" : ""}`}>{shortName(d.name, 28)}</a>
+                    <a href={`/api/uploads/${d.path}`} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-1.5 rounded-full bg-background px-4 py-1.5 hover:text-primary"><Eye className="h-4 w-4" />View</a>
                     <button type="button" className="shrink-0 rounded-full bg-background px-4 py-1.5 hover:text-destructive" onClick={() => setRemoveDocs((l) => toggle(l, d.id))}>
                       {removeDocs.includes(d.id) ? "Undo" : "Remove"}
                     </button>
@@ -663,7 +654,7 @@ export default function PropertyForm({ initial, owners, role, listedBy }: {
                 {!isBuilding && <span className="flex items-center gap-1.5"><BathIcon className="h-4 w-4 text-primary" />{isPG ? pgBaths : baths || 0}</span>}
               </div>
             </div>
-            <button disabled={busy} className="mt-2 w-full rounded-full bg-primary py-3.5 text-primary-foreground hover:bg-ink disabled:opacity-60">
+            <button disabled={busy} className="flex items-center justify-center mt-2 w-full rounded-full bg-primary py-3.5 text-primary-foreground hover:bg-ink disabled:opacity-60">
               {busy ? "Saving…" : editing ? "Update property" : "Create property"}
             </button>
           </div>

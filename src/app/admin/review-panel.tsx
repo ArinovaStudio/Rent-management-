@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { authFetch } from "@/lib/fetch-auth";
 
-type Option = { action: string; label: string; needsNote: boolean };
+// `doneLabel`: the decision is already made, so the button shows it (e.g. "Approved") and can't be pressed
+type Option = { action: string; label: string; needsNote: boolean; doneLabel?: string };
 
 // Approve / reject / request-info buttons with one shared note box. `url` is the review endpoint.
 export default function ReviewPanel({ url, options }: { url: string; options: Option[] }) {
@@ -43,7 +44,11 @@ export default function ReviewPanel({ url, options }: { url: string; options: Op
         <textarea className="field" rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
       </label>
       <div className="flex flex-wrap gap-2">
-        {options.map((o) => (
+        {options.map((o) => o.doneLabel ? (
+          <button key={o.action} type="button" disabled className="cursor-default rounded-full bg-primary/10 px-6 py-3 text-primary">
+            ✓ {o.doneLabel}
+          </button>
+        ) : (
           <button key={o.action} type="button" disabled={busy} onClick={() => submit(o)} className={`rounded-full px-6 py-3 disabled:opacity-60 ${style(o.action)}`}>
             {o.label}
           </button>

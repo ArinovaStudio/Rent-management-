@@ -309,6 +309,7 @@ model Room {
   bedrooms         Int? // Building flats: BHK
   bathrooms        Int? // Building flats: bathroom count
   furnishing       String? // Building flats: UNFURNISHED | SEMI_FURNISHED | FURNISHED
+  features         Json     @default("[]") // Building flats: features & finishes of this flat
   images           Json     @default("[]")
   isActive         Boolean  @default(true) // false = not open for new residents (e.g. under construction)
   inactiveNote     String?

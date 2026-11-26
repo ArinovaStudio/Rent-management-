@@ -15,21 +15,31 @@ export async function GET() {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
 
-  const issueWhere = { ...issueScope(me), status: { in: OPEN } };
+  // Issues and the review queue don't depend on each other, so they all run at the same time.
+  // Before: issues first, then the review queries one step later. Now: one round trip for everything.
+  const [issueData, review] = await Promise.all([loadIssues(me), loadReview(me)]);
 
-  const [issueTotal, issueRows] = await Promise.all([
-    prisma.issue.count({ where: issueWhere }),
-    prisma.issue.findMany({
-      where: issueWhere,
-      take: 50,
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true, title: true, priority: true, status: true, createdAt: true,
-        property: { select: { name: true } }, room: { select: { label: true } },
-      },
-    }),
-  ]);
-  const issues = issueRows
+  return NextResponse.json({ issues: issueData, review });
+}
+
+type Me = { id: string; role: string };
+
+async function loadIssues(me: Me) {
+  const issueWhere = { ...issueScope(me as Parameters<typeof issueScope>[0]), status: { in: OPEN } };
+  // Fetch one extra row so we only run a separate count when the queue is larger than the sort window.
+  const rows = await prisma.issue.findMany({
+    where: issueWhere,
+    take: 51,
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, title: true, priority: true, status: true, createdAt: true,
+      property: { select: { name: true } }, room: { select: { label: true } },
+    },
+  });
+  const overflow = rows.length > 50;
+  const window = overflow ? rows.slice(0, 50) : rows;
+  const total = overflow ? await prisma.issue.count({ where: issueWhere }) : rows.length;
+  const items = window
     .sort((a, b) => RANK[a.priority] - RANK[b.priority])
     .slice(0, 8)
     .map((i) => ({
@@ -37,30 +47,36 @@ export async function GET() {
       place: `${i.property.name}${i.room ? ` · ${i.room.label}` : ""}`,
       createdAt: i.createdAt,
     }));
+  return { total, items };
+}
 
-  let review: { total: number; items: Item[] } = { total: 0, items: [] };
-
+async function loadReview(me: Me): Promise<{ total: number; items: Item[] }> {
   if (me.role === "SUPER_ADMIN") {
-    const [propCount, kycCount, props, kyc] = await Promise.all([
-      prisma.property.count({ where: { status: "PENDING" } }),
-      prisma.ownerProfile.count({ where: { verificationStatus: "KYC_PENDING" } }),
+    // One extra row each: skip the count queries while the pending queues are small (usual case).
+    const [props, kyc] = await Promise.all([
       prisma.property.findMany({
-        where: { status: "PENDING" }, orderBy: { updatedAt: "asc" }, take: 6,
+        where: { status: "PENDING" }, orderBy: { updatedAt: "asc" }, take: 7,
         select: { id: true, name: true, city: true, owner: { select: { name: true } } },
       }),
       prisma.ownerProfile.findMany({
-        where: { verificationStatus: "KYC_PENDING" }, orderBy: { createdAt: "asc" }, take: 6,
+        where: { verificationStatus: "KYC_PENDING" }, orderBy: { createdAt: "asc" }, take: 7,
         select: { id: true, legalName: true, user: { select: { name: true } } },
       }),
     ]);
-    review = {
+    const [propCount, kycCount] = await Promise.all([
+      props.length < 7 ? props.length : prisma.property.count({ where: { status: "PENDING" } }),
+      kyc.length < 7 ? kyc.length : prisma.ownerProfile.count({ where: { verificationStatus: "KYC_PENDING" } }),
+    ]);
+    return {
       total: propCount + kycCount,
       items: [
-        ...props.map((p): Item => ({ id: p.id, kind: "PROPERTY", title: p.name, subtitle: `${p.city} · by ${p.owner.name}`, status: "PENDING", href: "/admin/approvals" })),
-        ...kyc.map((k): Item => ({ id: k.id, kind: "KYC", title: k.legalName ?? k.user.name, subtitle: "Owner KYC", status: "KYC_PENDING", href: "/admin/kyc" })),
+        ...props.slice(0, 6).map((p): Item => ({ id: p.id, kind: "PROPERTY", title: p.name, subtitle: `${p.city} · by ${p.owner.name}`, status: "PENDING", href: "/admin/approvals" })),
+        ...kyc.slice(0, 6).map((k): Item => ({ id: k.id, kind: "KYC", title: k.legalName ?? k.user.name, subtitle: "Owner KYC", status: "KYC_PENDING", href: "/admin/kyc" })),
       ],
     };
-  } else if (me.role === "PROPERTY_ADMIN") {
+  }
+
+  if (me.role === "PROPERTY_ADMIN") {
     const [props, kycStatus] = await Promise.all([
       prisma.property.findMany({
         where: { ownerId: me.id, status: { in: OWNER_REVIEW } }, orderBy: { updatedAt: "desc" }, take: 8,
@@ -76,8 +92,8 @@ export async function GET() {
     if (kycStatus && kycStatus !== "VERIFIED") {
       items.unshift({ id: "kyc", kind: "KYC", title: "Your account verification", subtitle: "", status: kycStatus, href: "/dashboard" });
     }
-    review = { total: items.length, items };
+    return { total: items.length, items };
   }
 
-  return NextResponse.json({ issues: { total: issueTotal, items: issues }, review });
+  return { total: 0, items: [] };
 }

@@ -28,7 +28,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       url.searchParams.set("next", req.nextUrl.pathname);
       return NextResponse.redirect(url);
     }
-    const property = await prisma.property.findUnique({ where: { id: segments[1] ?? "" } });
+    const property = await prisma.property.findUnique({
+      where: { id: segments[1] ?? "" },
+      select: { id: true, ownerId: true },
+    });
     if (!property || !canEditProperty(me, property)) {
       return NextResponse.json({ error: "Not allowed." }, { status: 403 });
     }

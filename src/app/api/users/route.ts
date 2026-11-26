@@ -41,7 +41,7 @@ export async function POST(req: Request) {
   if (!idFile) fileErrors.document = "Upload a photo or PDF of the person's ID.";
   if (Object.keys(fileErrors).length) return bad(fileErrors);
 
-  if (await prisma.user.findUnique({ where: { email } })) {
+  if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
     return NextResponse.json({ error: "An account with this email already exists.", fieldErrors: { email: "Already registered." } }, { status: 409 });
   }
 
@@ -51,6 +51,8 @@ export async function POST(req: Request) {
       data: {
         name, email, role, createdById: me.id,
         passwordHash: await bcrypt.hash(password, 12),
+        // Admin-created: treated as already verified — they only need to change the temporary password.
+        emailVerifiedAt: new Date(),
         ownerProfile: {
           create: {
             accountType: "INDIVIDUAL",
@@ -118,15 +120,16 @@ export async function POST(req: Request) {
     return bad({ [failure.field]: failure.error });
   }
 
-  // Login details go to the new person's email. The password is temporary: they are told to change it after the first sign-in.
+  // Login details go to the new person's email. No email/KYC verification step — only change the temporary password after first sign-in.
   const loginUrl = process.env.APP_URL ? `${process.env.APP_URL.replace(/\/$/, "")}/login` : null;
+  const roleLabel = role === "PROPERTY_MANAGER" ? "Property Manager" : "Property Admin (co-owner)";
   await notify(
     email,
     "Your account has been created",
-    `Hi ${name},\n\n${me.name} created a ${role === "PROPERTY_MANAGER" ? "Property Manager" : "Property Admin"} account for you.\n\n` +
+    `Hi ${name},\n\n${me.name} created a ${roleLabel} account for you.\n\n` +
       `Your login details:\nLogin ID (email): ${email}\nTemporary password: ${password}\n\n` +
       (loginUrl ? `Sign in here: ${loginUrl}\n\n` : "") +
-      `This password is temporary. After you sign in, open Profile and change it to a password only you know. Do not share it with anyone.`
+      `You do not need to verify your account. After you sign in, open Profile and change this temporary password to one only you know. Do not share it with anyone.`
   );
 
   return NextResponse.json({ id: user.id, name: user.name, email: user.email, role: user.role }, { status: 201 });

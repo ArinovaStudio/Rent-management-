@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Bell, X } from "lucide-react";
@@ -8,6 +8,12 @@ import { authFetch } from "@/lib/fetch-auth";
 type Issue = { id: string; title: string; priority: string; status: string; place: string; createdAt: string };
 type ReviewItem = { id: string; kind: "PROPERTY" | "KYC"; title: string; subtitle: string; status: string; href: string };
 type Data = { issues: { total: number; items: Issue[] }; review: { total: number; items: ReviewItem[] } };
+
+// Kept in the browser between page changes. The bell is part of every page, so without this it would
+// ask the server again on every single click. It only ever fills in the browser (never on the server).
+let cached: { data: Data; at: number } | null = null;
+const FRESH_MS = 30_000;     // moving between pages: reuse what we have if it is newer than this
+const OPEN_FRESH_MS = 10_000; // opening the bell: refresh sooner, the person is looking right now
 
 const pretty = (s: string) => s.replace(/_/g, " ").toLowerCase();
 const PRIORITY_STYLE: Record<string, string> = {
@@ -20,19 +26,39 @@ const PRIORITY_STYLE: Record<string, string> = {
 export default function QueuePopup({ role }: { role: string }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"issues" | "review">("issues");
-  const [data, setData] = useState<Data | null>(null);
+  const [data, setData] = useState<Data | null>(() => (typeof window !== "undefined" && cached ? cached.data : null));
   const [error, setError] = useState(false);
+  const inFlight = useRef(false);
   const showReview = role !== "PROPERTY_MANAGER";
 
   const load = useCallback(async () => {
-    const res = await authFetch("/api/queue", { cache: "no-store" });
-    if (!res.ok) { setError(true); return; }
-    setError(false);
-    setData(await res.json());
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
+      const res = await authFetch("/api/queue", { cache: "no-store" });
+      if (!res.ok) { setError(true); return; }
+      const json: Data = await res.json();
+      cached = { data: json, at: Date.now() };
+      setError(false);
+      setData(json);
+    } catch {
+      setError(true);
+    } finally {
+      inFlight.current = false;
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (open) load(); }, [open, load]);
+  // On page load: wait a moment so the page itself paints first, and skip the call if we already have fresh numbers.
+  useEffect(() => {
+    if (cached && Date.now() - cached.at < FRESH_MS) return;
+    const t = setTimeout(load, cached ? 0 : 800);
+    return () => clearTimeout(t);
+  }, [load]);
+
+  // On opening the bell: show what we have at once, and refresh in the background if it is a bit old.
+  useEffect(() => {
+    if (open && (!cached || Date.now() - cached.at > OPEN_FRESH_MS)) load();
+  }, [open, load]);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);

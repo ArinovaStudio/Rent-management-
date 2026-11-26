@@ -1,42 +1,42 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getSessionUser } from "@/lib/current-user";
 import { canManageProperties } from "@/lib/permissions";
-import { getVerificationStatus } from "@/lib/owner-status";
 import PropertyForm from "../property-form";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { listedByInfo } from "@/lib/property-fields";
 
 export default async function NewPropertyPage() {
-  const me = await getCurrentUser();
+  const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canManageProperties(me.role, await getVerificationStatus(me.id))) redirect("/dashboard");
+  if (me.role !== "SUPER_ADMIN" && me.role !== "PROPERTY_ADMIN") redirect("/dashboard");
 
-  // Only the Super Admin gets the "create for" dropdown.
-  const owners =
+  // Super Admin: owners dropdown only. Property Admin: one user row covers verification + listed-by.
+  const [owners, lister] = await Promise.all([
     me.role === "SUPER_ADMIN"
-      ? await prisma.user.findMany({
+      ? prisma.user.findMany({
           where: { role: "PROPERTY_ADMIN" },
           select: { id: true, name: true },
           orderBy: { name: "asc" },
         })
-      : undefined;
+      : Promise.resolve(undefined),
+    me.role === "PROPERTY_ADMIN"
+      ? prisma.user.findUnique({
+          where: { id: me.id },
+          select: {
+            name: true, email: true, role: true,
+            ownerProfile: { select: { legalName: true, phone: true, accountType: true, verificationStatus: true } },
+          },
+        })
+      : Promise.resolve(null),
+  ]);
 
-  // A Property Admin is the lister. For a Super Admin the owner is chosen in the form.
-  const lister = me.role === "PROPERTY_ADMIN"
-    ? await prisma.user.findUnique({
-        where: { id: me.id },
-        select: {
-          name: true, email: true, role: true,
-          ownerProfile: { select: { legalName: true, phone: true, accountType: true } },
-        },
-      })
-    : null;
-
-  const name = (me as unknown as { name?: string }).name ?? "Account";
+  if (me.role === "PROPERTY_ADMIN" && !canManageProperties(me.role, lister?.ownerProfile?.verificationStatus ?? null)) {
+    redirect("/dashboard");
+  }
 
   return (
-    <AdminShell role={me.role} name={name}>
+    <AdminShell role={me.role} name={me.name ?? "Account"}>
       {me.role === "PROPERTY_ADMIN" && (
         <p className="mb-6 rounded-2xl bg-background px-5 py-3 text-sm text-muted-foreground">New properties are reviewed by the Super Admin before they go live.</p>
       )}

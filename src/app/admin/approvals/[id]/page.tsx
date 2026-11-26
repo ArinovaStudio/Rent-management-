@@ -67,7 +67,7 @@ export default async function PropertyReview({ params }: { params: Promise<{ id:
             {p.owner.name} ({p.owner.email})
             {ownerProfile && <> · account: {OWNER_STATUS[ownerProfile.verificationStatus]} (<a className={link} href={`/admin/kyc/${ownerProfile.id}`}>KYC</a>)</>}
           </Row>
-          <p className="text-muted-foreground">Account verification doesn&apos;t approve this property. Check the proof below.</p>
+          {/* <p className="text-muted-foreground">Account verification doesn&apos;t approve this property. Check the proof below.</p> */}
           <Row label="Ownership/authority proof">
             {p.authorityProof ? <a className={link} href={`/api/property-authority/${p.id}`} target="_blank" rel="noreferrer">{p.authorityProof.originalName}</a> : "none uploaded"}
           </Row>
@@ -100,9 +100,12 @@ export default async function PropertyReview({ params }: { params: Promise<{ id:
           <ReviewPanel
             url={`/api/admin/properties/${p.id}/review`}
             options={[
-              { action: "APPROVE", label: "Approve", needsNote: false },
+              p.status === "APPROVED"
+                ? { action: "APPROVE", label: "Approve", needsNote: false, doneLabel: "Approved" }
+                : { action: "APPROVE", label: "Approve", needsNote: false },
               { action: "REJECT", label: "Reject", needsNote: true },
-              { action: "REQUEST_INFO", label: "Request more information", needsNote: true },
+              // an approved property is live, so more information can't be requested for it
+              ...(p.status === "APPROVED" ? [] : [{ action: "REQUEST_INFO", label: "Request more information", needsNote: true }]),
             ]}
           />
         </Card>

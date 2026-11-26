@@ -13,7 +13,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const issue = await prisma.issue.findUnique({
     where: { id },
-    include: { property: { include: { owner: { select: { email: true } } } }, recipient: { select: { email: true } }, reportedBy: { select: { email: true } } },
+    select: {
+      id: true, title: true, status: true, resolutionNote: true, escalatedAt: true,
+      ticketNo: true, ticketCode: true, recipientId: true,
+      property: { select: { name: true, ownerId: true, owner: { select: { email: true } } } },
+      recipient: { select: { email: true } },
+      reportedBy: { select: { email: true } },
+    },
   });
   if (!issue) return NextResponse.json({ error: "Issue not found." }, { status: 404 });
   if (!canUpdateIssue(me, issue)) {

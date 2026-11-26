@@ -30,6 +30,24 @@ export function F({ label, wide, req, children }: { label: ReactNode; wide?: boo
   );
 }
 
+// Long file names are cut to the first characters (the extension is kept). The full name stays in the tooltip.
+export function shortName(name: string, max = 24): string {
+  if (name.length <= max) return name;
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 && name.length - dot <= 6 ? name.slice(dot) : "";
+  return `${name.slice(0, max)}…${ext}`;
+}
+
+// Small (!) icon next to a label. The explanation shows on hover or keyboard focus, so nothing is written upfront.
+export function Hint({ text }: { text: string }) {
+  return (
+    <span className="group relative ml-1.5 inline-flex align-middle">
+      <span tabIndex={0} role="img" aria-label={text} className="flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">!</span>
+      <span role="tooltip" className="pointer-events-none invisible absolute left-1/2 top-full z-20 mt-1 w-60 max-w-[min(15rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl bg-ink px-3 py-2 text-xs font-normal text-white opacity-0 shadow-lg group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 sm:left-0 sm:translate-x-0">{text}</span>
+    </span>
+  );
+}
+
 // Switch-style checkbox row. Still a real <input type="checkbox" name=...> so FormData picks it up.
 export function ToggleRow({ title, desc, name, ...rest }: { title: string; desc?: string; name: string } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "title" | "type">) {
   return (
@@ -81,29 +99,39 @@ export function PairList({ rows, onChange, aLabel, bLabel, addLabel, aOptions }:
 // Click presets to select them, or add your own
 export function TagPicker({ presets, value, onChange, label, charges, onChargeChange }: {
   presets: string[]; value: string[]; onChange: (v: string[]) => void; label?: string;
-  // Optional: a monthly charge box under each selected tag (blank = included)
-  charges?: Record<string, string>; onChargeChange?: (tag: string, v: string) => void;
+  charges?: Record<string, string>; onChargeChange?: (tag: string, v: string | undefined) => void;
 }) {
   const charge = (v: string) => {
-    const charged = charges?.[v] !== undefined;
+    if (!charges || !onChargeChange) return null;
+    const charged = charges[v] !== undefined;
     return (
-      <div className="flex flex-col gap-2 rounded-xl bg-background p-2">
-        <div className="flex items-center justify-between text-xs">
-          <span>Charged?</span>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => onChargeChange?.(v, "")}
-              className={`rounded-full px-3 py-1 ${charged ? "bg-cream" : "bg-primary text-white"}`}>No</button>
-            <button type="button" onClick={() => onChargeChange?.(v, "0")}
-              className={`rounded-full px-3 py-1 ${charged ? "bg-primary text-white" : "bg-cream"}`}>Yes</button>
+      <div className="min-w-0 space-y-2 rounded-2xl bg-background p-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-medium text-muted-foreground">Extra charge?</span>
+          <div className="flex rounded-full bg-cream p-0.5 text-xs">
+            <button type="button" onClick={() => onChargeChange(v, undefined)}
+              className={`rounded-full px-3 py-1.5 transition-colors ${!charged ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+              Included
+            </button>
+            <button type="button" onClick={() => onChargeChange(v, charges[v] ?? "")}
+              className={`rounded-full px-3 py-1.5 transition-colors ${charged ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+              Charged
+            </button>
           </div>
         </div>
         {charged && (
-          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            ₹
-            <input type="number" min={0} step={1} placeholder="Charge / month"
-              value={charges?.[v] ?? ""}
-              onChange={(e) => onChargeChange?.(v, e.target.value)}
-              className="w-full min-w-0 bg-transparent text-sm text-foreground outline-none" />
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
+            <span>₹ / month</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              placeholder="Enter monthly charge"
+              value={charges[v] ?? ""}
+              onChange={(e) => onChargeChange(v, e.target.value)}
+              className="field !bg-cream !px-4 !py-2.5 text-sm"
+            />
           </label>
         )}
       </div>
@@ -118,20 +146,20 @@ export function TagPicker({ presets, value, onChange, label, charges, onChargeCh
     setCustom("");
   };
   return (
-    <div className="rounded-[1.5rem] bg-cream/60 p-4 sm:col-span-2">
-      <div className="mb-3 flex items-center justify-between gap-3 px-1">
+    <div className="min-w-0 overflow-hidden rounded-[1.5rem] bg-cream/60 p-4 sm:col-span-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 px-1">
         <p className="font-medium">{label}</p>
         <div className="flex items-center gap-3 text-sm">
           <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary">{value.length} selected</span>
           {value.length > 0 && <button type="button" onClick={() => onChange([])} className="text-muted-foreground hover:text-destructive">Clear</button>}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2 xl:grid-cols-3">
         {presets.map((v) => {
           const on = value.includes(v);
           return (
-            <div key={v} className="grid content-start gap-1.5">
-              <button type="button" aria-pressed={on} onClick={() => toggle(v)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-left text-sm transition-colors ${on ? "border-primary bg-primary/5 font-medium text-primary" : "border-transparent bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+            <div key={v} className="grid min-w-0 content-start gap-1.5">
+              <button type="button" aria-pressed={on} onClick={() => toggle(v)} className={`flex min-w-0 items-center gap-2 rounded-2xl border px-3 py-2.5 text-left text-sm transition-colors ${on ? "border-primary bg-primary/5 font-medium text-primary" : "border-transparent bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
                 <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${on ? "bg-primary text-primary-foreground" : "bg-cream"}`}>{on && <Check className="h-3 w-3" />}</span>
                 <span className="truncate">{v}</span>
               </button>
@@ -140,8 +168,8 @@ export function TagPicker({ presets, value, onChange, label, charges, onChargeCh
           );
         })}
         {customs.map((v) => (
-          <div key={v} className="grid content-start gap-1.5">
-            <span className="flex items-center gap-2 rounded-2xl border border-primary bg-primary/5 px-3 py-2.5 text-sm font-medium text-primary">
+          <div key={v} className="grid min-w-0 content-start gap-1.5">
+            <span className="flex min-w-0 items-center gap-2 rounded-2xl border border-primary bg-primary/5 px-3 py-2.5 text-sm font-medium text-primary">
               <span className="truncate">{v}</span>
               <button type="button" aria-label={`Remove ${v}`} onClick={() => toggle(v)} className="ml-auto shrink-0"><X className="h-3.5 w-3.5" /></button>
             </span>
@@ -149,8 +177,8 @@ export function TagPicker({ presets, value, onChange, label, charges, onChargeCh
           </div>
         ))}
       </div>
-      <div className="mt-3 flex gap-2">
-        <input className="field !bg-background" value={custom} maxLength={40} placeholder="Add your own and press Enter" onChange={(e) => setCustom(e.target.value)}
+      <div className="mt-3 flex min-w-0 gap-2">
+        <input className="field min-w-0 !bg-background" value={custom} maxLength={40} placeholder="Add your own and press Enter" onChange={(e) => setCustom(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }} />
         <button type="button" onClick={add} disabled={!custom.trim()} className="shrink-0 rounded-full bg-primary px-5 text-sm text-primary-foreground hover:bg-ink disabled:opacity-40">Add</button>
       </div>
@@ -162,10 +190,10 @@ export function TagPicker({ presets, value, onChange, label, charges, onChargeCh
 export function FileDrop({ name, accept, title, hint, wide = true, req, onClear }: { name: string; accept: string; title: string; hint: string; wide?: boolean; req?: boolean; onClear?: () => void }) {
   const [file, setFile] = useState("");
   return (
-    <label className={`flex cursor-pointer items-center gap-4 rounded-2xl border-2 border-dashed border-primary/30 bg-cream/60 px-5 py-4 transition-colors hover:border-primary hover:bg-primary/5 ${wide ? "sm:col-span-2" : ""}`}>
+    <label className={`flex min-w-0 cursor-pointer items-center gap-4 rounded-2xl border-2 border-dashed border-primary/30 bg-cream/60 px-5 py-4 transition-colors hover:border-primary hover:bg-primary/5 ${wide ? "sm:col-span-2" : ""}`}>
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-background text-primary">{file ? <FileText className="h-5 w-5" /> : <Upload className="h-5 w-5" />}</span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium">{file || title}{!file && req && <span className="text-destructive"> *</span>}</span>
+        <span className="block truncate font-medium" title={file || undefined}>{file ? shortName(file) : title}{!file && req && <span className="text-destructive"> *</span>}</span>
         <span className="block text-xs text-muted-foreground">{file ? "Click to choose a different file" : hint}</span>
       </span>
       {file && onClear && <span role="button" aria-label="Clear" onClick={(e) => { e.preventDefault(); setFile(""); onClear(); }} className="shrink-0 rounded-full bg-background p-1.5 text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></span>}

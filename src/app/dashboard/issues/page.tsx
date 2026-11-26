@@ -1,32 +1,39 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import type { IssueStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getSessionUser } from "@/lib/current-user";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
+import PropertyFilterBar from "@/components/admin/PropertyFilterBar";
 import { Chip } from "@/app/admin/ui";
 import { CATEGORY_LABEL, PRIORITY_LABEL, ROLE_LABEL, STATUS_LABEL, issueScope, priorityTone, statusTone, ticketLabel, withWho } from "@/lib/issues";
+import {
+  DEFAULT_ISSUE_STATUS,
+  ISSUE_CATEGORY_OPTIONS,
+  ISSUE_PRIORITY_OPTIONS,
+  ISSUE_STATUS_OPTIONS,
+  applyIssueFilters,
+  hasIssueFilters,
+} from "@/lib/issue-filter";
 import RaiseIssue, { type RaiseProperty } from "./raise-issue";
 
-const FILTERS = [["open", "Open"], ["escalated", "With Super Admin"], ["closed", "Resolved"], ["all", "All"]] as const;
 const fmt = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
-export default async function IssuesPage({ searchParams }: { searchParams: Promise<{ f?: string }> }) {
-  const me = await getCurrentUser();
+export default async function IssuesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; status?: string; priority?: string; category?: string }>;
+}) {
+  const me = await getSessionUser();
   if (!me) redirect("/login");
   const isManager = me.role === "PROPERTY_MANAGER";
-  const name = (me as unknown as { name?: string }).name ?? "Account";
+  const name = me.name ?? "Account";
 
-  const { f = "open" } = await searchParams;
-  const filter =
-    f === "closed" ? { status: { in: ["RESOLVED", "CLOSED"] as IssueStatus[] } }
-    : f === "escalated" ? { escalatedAt: { not: null } }
-    : f === "all" ? {}
-    : { status: { in: ["OPEN", "IN_PROGRESS"] as IssueStatus[] } };
+  const { q, status, priority, category } = await searchParams;
+  const filters = { q, status, priority, category };
 
-  const [issues, properties] = await Promise.all([
+  const [allIssues, properties] = await Promise.all([
     prisma.issue.findMany({
-      where: { ...issueScope(me), ...filter },
+      where: issueScope(me),
       include: {
         property: { select: { name: true } },
         room: { select: { label: true } },
@@ -53,6 +60,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
       : [],
   ]);
 
+  const issues = applyIssueFilters(allIssues, filters);
   const raise: RaiseProperty[] = properties.map((p) => ({
     id: p.id, name: p.name,
     recipients: [{ id: p.ownerId, name: p.owner.name, label: "Main owner" }, ...p.coOwners.map((c) => ({ id: c.userId, name: c.user.name, label: "Co-owner" }))],
@@ -67,16 +75,25 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
         action={isManager && <RaiseIssue properties={raise} variant="primary" />}
       />
 
-      <div className="mb-6 flex flex-wrap gap-2">
-        {FILTERS.map(([key, text]) => (
-          <Link key={key} href={`/dashboard/issues?f=${key}`} className={`rounded-full px-4 py-2 text-sm ${f === key || (key === "open" && !FILTERS.some(([k]) => k === f)) ? "bg-primary text-primary-foreground" : "bg-background hover:bg-cream"}`}>{text}</Link>
-        ))}
-      </div>
+      {allIssues.length > 0 && (
+        <PropertyFilterBar
+          placeholder="Search by title, ticket or property"
+          groups={[
+            { key: "status", label: "Status", options: ISSUE_STATUS_OPTIONS, defaultValue: DEFAULT_ISSUE_STATUS },
+            { key: "priority", label: "Priority", options: ISSUE_PRIORITY_OPTIONS },
+            { key: "category", label: "Category", options: ISSUE_CATEGORY_OPTIONS },
+          ]}
+        />
+      )}
 
       {isManager && properties.length === 0 && <p className="mb-6 rounded-2xl bg-cream px-5 py-3 text-sm">You aren&apos;t assigned to any property yet.</p>}
 
       {issues.length === 0 ? (
-        <Panel><p className="text-muted-foreground">No issues here.</p></Panel>
+        <Panel>
+          <p className="text-muted-foreground">
+            {allIssues.length > 0 && hasIssueFilters(filters) ? "No issues match your search or filters." : "No issues here."}
+          </p>
+        </Panel>
       ) : (
         <div className="space-y-4">
           {issues.map((i) => {

@@ -126,7 +126,7 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
             <div className="mx-auto max-w-lg space-y-4 rounded-3xl bg-primary/10 p-6 text-center">
               <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground"><Check className="h-6 w-6" /></span>
               <p className="text-lg font-medium">{sharedDone ? "Person added" : "Person allocated"}</p>
-              <p className="text-sm text-muted-foreground">{sharedDone ? "This person shares the flat with its main tenant, so they use the main tenant's link. Rent and bills stay on the main tenant." : "Share this private link with the resident. They can see rent, bills and documents here."}</p>
+              <p className="text-sm text-muted-foreground">{sharedDone ? "This person shares the flat with its main tenant, so they use the main tenant's link. Rent and bills stay on the main tenant." : "We've emailed them this private link with the property details. They can also open it here to see rent, bills and documents."}</p>
               {!sharedDone && <a className="block break-all rounded-2xl bg-background px-4 py-3 text-sm text-primary underline" href={residentUrl} target="_blank" rel="noreferrer">{residentUrl}</a>}
               <div className="flex justify-center gap-2">
                 {!sharedDone && (
@@ -195,7 +195,7 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className={lbl}><span className={lblText}>Full name</span><input className="field" name="fullName" required /></label>
                   <label className={lbl}><span className={lblText}>Phone number</span><input className="field" name="phone" type="tel" required /></label>
-                  <label className={lbl}><span className={lblText}>Email (optional)</span><input className="field" name="email" type="email" /></label>
+                  <label className={lbl}><span className={lblText}>Email</span><input className="field" name="email" type="email" required /></label>
                   <label className={lbl}><span className={lblText}>Move-in date</span><input className="field" name="moveInDate" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} /></label>
                   <label className={lbl}>
                     <span className={lblText}>{isPg ? "Monthly rent" : whole && whole.occupied > 0 ? "Monthly rent (housemate)" : "Monthly rent (whole flat)"}</span>

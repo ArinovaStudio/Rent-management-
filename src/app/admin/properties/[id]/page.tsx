@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Building2, MapPin } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getSessionUser } from "@/lib/current-user";
 import { occupancy } from "@/lib/occupancy";
 import { amenityCharges } from "@/lib/amenity-charges";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
@@ -17,31 +17,48 @@ const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 const btn = "rounded-full bg-background px-5 py-2.5 text-sm font-medium shadow-sm ring-1 ring-black/10 transition-colors hover:bg-primary hover:text-primary-foreground hover:ring-primary";
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return <div><dt className="text-xs text-muted-foreground">{label}</dt><dd className="text-sm font-medium">{children}</dd></div>;
+  return <div className="flex flex-row gap-y-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="text-xs font-medium">{children}</dd></div>;
 }
 
 // The property's main page for the Super Admin: every detail, and every action in one place.
 export default async function PropertyPage({ params }: { params: Promise<{ id: string }> }) {
-  const me = await getCurrentUser();
+  const me = await getSessionUser();
   if (!me) redirect("/login");
   if (me.role !== "SUPER_ADMIN") notFound();
 
   const { id } = await params;
+  // Only the fields this page renders — no full room/allocation rows, only active-allocation counts.
   const p = await prisma.property.findUnique({
     where: { id },
-    include: {
-      rooms: { include: { allocations: { where: { status: "ACTIVE" }, select: { id: true, occupants: true } } }, orderBy: { createdAt: "asc" } },
+    select: {
+      id: true, name: true, description: true, type: true, address: true, city: true, mapUrl: true,
+      bedrooms: true, bathrooms: true, areaSqft: true, floors: true, sharing: true, yearBuilt: true,
+      amenities: true, amenityCharges: true, status: true, reviewNote: true, isActive: true, inactiveNote: true, createdAt: true,
       owner: { select: { name: true, email: true } },
       images: { orderBy: { sortOrder: "asc" }, select: { id: true, path: true } },
-      managers: { include: { manager: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } },
+      managers: {
+        orderBy: { createdAt: "asc" },
+        select: { id: true, manager: { select: { name: true, email: true } } },
+      },
       coOwners: { select: { user: { select: { name: true } } } },
+      rooms: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          floor: true, rent: true, isActive: true, capacity: true, roomType: true,
+          _count: { select: { allocations: { where: { status: "ACTIVE" } } } },
+        },
+      },
     },
   });
   if (!p) notFound();
 
   const base = `/admin/properties/${p.id}`;
-  const name = (me as unknown as { name?: string }).name ?? "Account";
-  const { cap, occ, full, wholeUnit, unlimited } = occupancy(p, p.rooms);
+  const roomsForOcc = p.rooms.map((r) => ({
+    capacity: r.capacity,
+    roomType: r.roomType,
+    activeCount: r._count.allocations,
+  }));
+  const { cap, occ, full, wholeUnit, unlimited } = occupancy(p, roomsForOcc);
   const pct = cap ? Math.min(100, Math.round((occ / cap) * 100)) : 0;
   const priced = new Map(amenityCharges(p).list.map((x) => [x.name, x.charge]));
   const typeText = `${TYPE_LABEL[p.type]}${p.sharing && p.type !== "PG" && p.type !== "BUILDING" ? " (sharing)" : ""}`;
@@ -55,13 +72,13 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
     const rs = p.rooms.filter((r) => (r.floor ?? 0) === fl);
     const rents = rs.map((r) => r.rent).filter((n) => n > 0);
     return {
-      fl, count: rs.length, on: rs.filter((r) => r.isActive).length, living: rs.reduce((s, r) => s + r.allocations.length, 0),
+      fl, count: rs.length, on: rs.filter((r) => r.isActive).length, living: rs.reduce((s, r) => s + r._count.allocations, 0),
       rent: rents.length ? (Math.min(...rents) === Math.max(...rents) ? inr(rents[0]) : `${inr(Math.min(...rents))} – ${inr(Math.max(...rents))}`) : "—",
     };
   });
 
   return (
-    <AdminShell role={me.role} name={name}>
+    <AdminShell role={me.role} name={me.name ?? "Account"}>
       <Link href="/admin/properties" className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" />All properties</Link>
       <PageHeader title={p.name} sub={<span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" />{typeText} · {p.address}, {p.city}</span>} action={<ActiveToggle propertyId={p.id} active={p.isActive} />} />
 
@@ -75,7 +92,7 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
         <DeletePropertyButton propertyId={p.id} propertyName={p.name} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
+      <div className="grid gap-6 lg:grid-cols-[1fr_26rem]">
         <div className="space-y-6">
           <Panel>
             {p.images.length > 0 ? (
@@ -127,9 +144,9 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
             {p.reviewNote && <p className="mb-4 rounded-2xl bg-cream px-4 py-2 text-sm">Review note: {p.reviewNote}</p>}
             <div className="mb-1 flex justify-between gap-2 text-sm"><span>{occText}</span><span className="text-muted-foreground">{full ? "Full" : ""}</span></div>
             <div className="mb-5 h-2 overflow-hidden rounded-full bg-cream"><div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} /></div>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <dl className="grid grid-cols-2 gap-x-2 gap-y-3">
               <Fact label="Owner">{p.owner.name}</Fact>
-              <Fact label="Owner email"><span className="break-all">{p.owner.email}</span></Fact>
+              <Fact label="Email"><span className="break-all">{p.owner.email}</span></Fact>
               <Fact label="Floors">{p.floors ?? "—"}</Fact>
               <Fact label="Rooms / units">{p.rooms.length}</Fact>
               {p.areaSqft != null && <Fact label="Area">{p.areaSqft.toLocaleString("en-IN")} sq ft</Fact>}

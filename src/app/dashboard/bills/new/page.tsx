@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getSessionUser } from "@/lib/current-user";
 import { canOperateProperty } from "@/lib/property-access";
 import { propertiesBase } from "@/lib/routes";
 import { fmtDate, rentPeriod } from "@/lib/bills";
@@ -12,7 +12,7 @@ import InvoiceView from "@/app/resident/[token]/invoice-view";
 // It is the resident's invoice page, but the month, units and rate are typed in here and the bill is calculated from them.
 // Staff only (the dashboard is behind the sign-in), and only for properties this person can run.
 export default async function NewBillPage({ searchParams }: { searchParams: Promise<{ allocation?: string; type?: string }> }) {
-  const me = await getCurrentUser();
+  const me = await getSessionUser();
   if (!me) redirect("/login");
 
   const sp = await searchParams;

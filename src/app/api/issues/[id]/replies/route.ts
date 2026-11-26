@@ -11,7 +11,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const issue = await prisma.issue.findUnique({
     where: { id },
-    include: { property: { include: { owner: { select: { email: true } } } }, recipient: { select: { email: true } }, reportedBy: { select: { email: true } } },
+    select: {
+      id: true, title: true, propertyId: true, recipientId: true, escalatedAt: true,
+      ticketNo: true, ticketCode: true,
+      property: { select: { name: true, ownerId: true, owner: { select: { email: true } } } },
+      recipient: { select: { email: true } },
+      reportedBy: { select: { email: true } },
+    },
   });
   if (!issue || !(await canSeeIssue(me, issue))) return NextResponse.json({ error: "Issue not found." }, { status: 404 });
 

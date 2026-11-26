@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "./db";
 
 export type VerificationStatusValue =
@@ -62,16 +63,18 @@ export async function syncVerificationStatus(userId: string) {
 
 // True for owners who registered through the wizard but haven't finished it. Accounts with no
 // profile (created before onboarding existed, Super Admins, managers) are never blocked.
-export async function hasUnfinishedOnboarding(userId: string) {
+// Cached per request so layout + page + helpers share one lookup.
+export const hasUnfinishedOnboarding = cache(async (userId: string) => {
   const p = await prisma.ownerProfile.findUnique({
     where: { userId },
     select: { onboardingCompletedAt: true },
   });
   return !!p && !p.onboardingCompletedAt;
-}
+});
 
 // The owner's verification status, or null for accounts with no owner profile.
-export async function getVerificationStatus(userId: string): Promise<VerificationStatusValue | null> {
+// Cached per request: properties pages, queue, and canOperateProperty often ask the same question.
+export const getVerificationStatus = cache(async (userId: string): Promise<VerificationStatusValue | null> => {
   const p = await prisma.ownerProfile.findUnique({ where: { userId }, select: { verificationStatus: true } });
   return p?.verificationStatus ?? null;
-}
+});

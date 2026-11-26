@@ -9,7 +9,13 @@ export async function POST(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
 
-  const profile = await prisma.ownerProfile.findUnique({ where: { userId: me.id }, include: { documents: true } });
+  const profile = await prisma.ownerProfile.findUnique({
+    where: { userId: me.id },
+    select: {
+      id: true, verificationStatus: true,
+      documents: { select: { id: true, type: true, path: true } },
+    },
+  });
   if (!profile) return NextResponse.json({ error: "No owner profile on this account." }, { status: 404 });
   if (profile.verificationStatus !== "NEEDS_MORE_INFO") {
     return NextResponse.json({ error: "No document is being requested right now." }, { status: 409 });

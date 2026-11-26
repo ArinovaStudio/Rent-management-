@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-import { canOperateProperty } from "@/lib/property-access";
+import { canOperateProperty, operableAllocationSelect } from "@/lib/property-access";
 import { RENT_TAX_KEY, amenityTaxKey, cleanPct, taxRatesOf } from "@/lib/invoice";
 
 // Saves the tax % of one invoice line.
@@ -12,7 +12,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   const { id } = await params;
-  const a = await prisma.allocation.findUnique({ where: { id }, include: { room: { include: { property: true } } } });
+  const a = await prisma.allocation.findUnique({ where: { id }, select: operableAllocationSelect });
   if (!a || !(await canOperateProperty(me, a.room.property))) return NextResponse.json({ error: "You can't manage this resident." }, { status: 403 });
 
   const b = await req.json().catch(() => ({}));

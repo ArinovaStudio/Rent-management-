@@ -25,7 +25,18 @@ export type RoomInput = {
   bedrooms: number | null;
   bathrooms: number | null;
   furnishing: string | null;
+  features: string[]; // Building flats: features & finishes of this flat
   images: string[]; // saved photo paths this room keeps
+};
+
+// Feature tags of one room: trimmed, no duplicates, at most 40 characters each and 40 tags
+const cleanTags = (v: unknown): string[] => {
+  const out: string[] = [];
+  if (Array.isArray(v)) for (const t of v) {
+    const s = String(t).trim().slice(0, 40);
+    if (s && !out.some((x) => x.toLowerCase() === s.toLowerCase())) out.push(s);
+  }
+  return out.slice(0, 40);
 };
 
 // Reads the multipart form sent by the property form and validates it.
@@ -110,6 +121,7 @@ export function parsePropertyForm(fd: FormData, role: Role) {
       bedrooms: isBuilding && String(r.bedrooms ?? "").trim() !== "" ? Number(r.bedrooms) : null,
       bathrooms: isBuilding && String(r.bathrooms ?? "").trim() !== "" ? Number(r.bathrooms) : null,
       furnishing: isBuilding ? String(r.furnishing ?? "") : null,
+      features: isBuilding ? cleanTags(r.features) : [],
       images: ((flatLike && sharing) || isBuilding) && Array.isArray(r.images) ? r.images.map(String).slice(0, isBuilding ? 10 : 5) : [],
     };
     if (!room.label) return fail(isBuilding ? "Every flat needs a flat number." : "Every room needs a name.");

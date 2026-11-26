@@ -31,7 +31,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const past = total === 0 ? [] : await prisma.allocation.findMany({
     where: { ...base, ...(floor === 0 ? { OR: [{ floorNumber: null }, { floorNumber: 0 }] } : { floorNumber: floor }) },
-    include: { room: { select: { label: true, floor: true, bedrooms: true } }, _count: { select: { documents: true } } },
+    select: {
+      id: true, roomId: true, fullName: true, phone: true, email: true, isHousemate: true,
+      floorNumber: true, roomLabel: true, roomBhk: true, monthlyRent: true, securityDeposit: true,
+      moveInDate: true, moveOutDate: true, updatedAt: true,
+      room: { select: { label: true, floor: true, bedrooms: true } },
+      _count: { select: { documents: true } },
+    },
     orderBy: [{ moveOutDate: "desc" }, { updatedAt: "desc" }],
     skip: (page - 1) * PAGE_SIZE,
     take: PAGE_SIZE,

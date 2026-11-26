@@ -1,8 +1,9 @@
 "use client";
 import { useState } from "react";
-import { ImagePlus, X } from "lucide-react";
+import { ChevronDown, ImagePlus, Pencil, X } from "lucide-react";
 import ConfigModal from "./config-modal";
-import { F } from "./property-sections";
+import { F, TagPicker } from "./property-sections";
+import { FEATURE_PRESETS } from "@/lib/property-fields";
 import { blankRoom, sm, type RoomState } from "./room-types";
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
@@ -15,7 +16,7 @@ export const flatNo = (label: string) => label.replace(/^flat\s+/i, "");
 export const isShareable = (r: RoomState) => r.roomType === "SHAREABLE";
 export const blankFlat = (floor: number, no: string): RoomState => ({
   ...blankRoom(no ? `Flat ${no}` : ""), floor: String(floor), roomType: "SINGLE", capacity: "1", ac: false, bathAttached: true,
-  bhk: "2", baths: "1", furnishing: "", sizeSqm: "", photos: [],
+  bhk: "2", baths: "1", furnishing: "", sizeSqm: "", photos: [], features: [],
 });
 
 export const FURNISH_OPTIONS: [string, string][] = [["UNFURNISHED", "Unfurnished"], ["SEMI_FURNISHED", "Semi-furnished"], ["FURNISHED", "Furnished"]];
@@ -45,6 +46,65 @@ export function flatIssue(flats: RoomState[], floorCount: number): string | null
     if (!f.furnishing) return `Flat ${no}: choose the furnishing.`;
   }
   return null;
+}
+
+// The inputs of one flat. Used by the floor popup (all flats of a floor) and by the single flat editor.
+function FlatFields({ r, onChange }: { r: RoomState; onChange: (p: Partial<RoomState>) => void }) {
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <F label="Flat number"><input className={sm} value={flatNo(r.label)} onChange={(e) => onChange({ label: e.target.value.trim() ? `Flat ${e.target.value}` : "" })} placeholder="e.g. 101" /></F>
+        <F label="Occupancy type">
+          <select className={sm} value={r.roomType} onChange={(e) => onChange({ roomType: e.target.value })}>
+            <option value="SINGLE">Single</option>
+            <option value="SHAREABLE">Shareable</option>
+          </select>
+        </F>
+        <F label="Rent (₹ / month)"><input className={sm} type="number" min={0} value={r.rent} onChange={(e) => onChange({ rent: e.target.value })} /></F>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <F label="BHK">
+          <select className={sm} value={r.bhk ?? ""} onChange={(e) => onChange({ bhk: e.target.value })}>
+            {Array.from({ length: 10 }, (_, k) => k + 1).map((n) => <option key={n} value={n}>{n} BHK</option>)}
+          </select>
+        </F>
+        <F label="Bathrooms"><input className={sm} type="number" min={1} max={20} value={r.baths ?? ""} onChange={(e) => onChange({ baths: e.target.value })} /></F>
+        <F label="Area (m²)"><input className={sm} type="number" min={0} step="any" value={r.sizeSqm} onChange={(e) => onChange({ sizeSqm: e.target.value })} /></F>
+        <F label="Furnishing">
+          <select className={sm} value={r.furnishing ?? ""} onChange={(e) => onChange({ furnishing: e.target.value })}>
+            <option value="">Select</option>
+            {FURNISH_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </F>
+      </div>
+      <div className="mt-3">
+        <p className="mb-2 text-sm font-medium">Flat photos <span className="text-muted-foreground">({r.photos.length}/{MAX_PHOTOS})</span></p>
+        <div className="flex flex-wrap gap-3">
+          {r.photos.map((p) => (
+            <div key={p.key} className="relative h-20 w-28 overflow-hidden rounded-xl bg-cream">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.src} alt="" className="h-full w-full object-cover" />
+              <button type="button" aria-label="Remove photo" onClick={() => onChange({ photos: r.photos.filter((x) => x.key !== p.key) })} className="absolute right-1 top-1 rounded-full bg-background p-1 text-destructive"><X className="h-3 w-3" /></button>
+            </div>
+          ))}
+          {r.photos.length < MAX_PHOTOS && (
+            <label className="flex h-20 w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl bg-background text-xs text-muted-foreground hover:bg-muted">
+              <ImagePlus className="h-5 w-5" />Add photo
+              <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(e) => {
+                const picked = Array.from(e.target.files ?? []).slice(0, MAX_PHOTOS - r.photos.length);
+                onChange({ photos: [...r.photos, ...picked.map((file) => ({ key: `${file.name}-${file.size}-${Math.random()}`, src: URL.createObjectURL(file), file }))] });
+                e.target.value = "";
+              }} />
+            </label>
+          )}
+        </div>
+      </div>
+      <div className="mt-3">
+        <TagPicker label="Features & finishes" presets={FEATURE_PRESETS} value={r.features ?? []} onChange={(features) => onChange({ features })} />
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">{isShareable(r) ? "Shareable: add as many residents as you need when allocating." : "Single: rented to one tenant."}</p>
+    </>
+  );
 }
 
 // Popup like the PG floor builder: one tab per floor. Each floor asks how many flats it has, then lists them.
@@ -110,54 +170,7 @@ export function BuildingFlatsModal({ floorCount, flats, onSave, onClose }: {
           {here.map((r, i) => (
             <div key={`${floor}-${i}`} className="rounded-2xl bg-cream/60 p-4">
               <p className="mb-3 font-medium">{flatNo(r.label) ? `Flat ${flatNo(r.label)}` : `Flat ${i + 1}`}</p>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <F label="Flat number"><input className={sm} value={flatNo(r.label)} onChange={(e) => patch(r, { label: e.target.value.trim() ? `Flat ${e.target.value}` : "" })} placeholder="e.g. 101" /></F>
-                <F label="Occupancy type">
-                  <select className={sm} value={r.roomType} onChange={(e) => patch(r, { roomType: e.target.value })}>
-                    <option value="SINGLE">Single</option>
-                    <option value="SHAREABLE">Shareable</option>
-                  </select>
-                </F>
-                <F label="Rent (₹ / month)"><input className={sm} type="number" min={0} value={r.rent} onChange={(e) => patch(r, { rent: e.target.value })} /></F>
-              </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <F label="BHK">
-                  <select className={sm} value={r.bhk ?? ""} onChange={(e) => patch(r, { bhk: e.target.value })}>
-                    {Array.from({ length: 10 }, (_, k) => k + 1).map((n) => <option key={n} value={n}>{n} BHK</option>)}
-                  </select>
-                </F>
-                <F label="Bathrooms"><input className={sm} type="number" min={1} max={20} value={r.baths ?? ""} onChange={(e) => patch(r, { baths: e.target.value })} /></F>
-                <F label="Area (m²)"><input className={sm} type="number" min={0} step="any" value={r.sizeSqm} onChange={(e) => patch(r, { sizeSqm: e.target.value })} /></F>
-                <F label="Furnishing">
-                  <select className={sm} value={r.furnishing ?? ""} onChange={(e) => patch(r, { furnishing: e.target.value })}>
-                    <option value="">Select</option>
-                    {FURNISH_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </F>
-              </div>
-              <div className="mt-3">
-                <p className="mb-2 text-sm font-medium">Flat photos <span className="text-muted-foreground">({r.photos.length}/{MAX_PHOTOS})</span></p>
-                <div className="flex flex-wrap gap-3">
-                  {r.photos.map((p) => (
-                    <div key={p.key} className="relative h-20 w-28 overflow-hidden rounded-xl bg-cream">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={p.src} alt="" className="h-full w-full object-cover" />
-                      <button type="button" aria-label="Remove photo" onClick={() => patch(r, { photos: r.photos.filter((x) => x.key !== p.key) })} className="absolute right-1 top-1 rounded-full bg-background p-1 text-destructive"><X className="h-3 w-3" /></button>
-                    </div>
-                  ))}
-                  {r.photos.length < MAX_PHOTOS && (
-                    <label className="flex h-20 w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl bg-background text-xs text-muted-foreground hover:bg-muted">
-                      <ImagePlus className="h-5 w-5" />Add photo
-                      <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(e) => {
-                        const picked = Array.from(e.target.files ?? []).slice(0, MAX_PHOTOS - r.photos.length);
-                        patch(r, { photos: [...r.photos, ...picked.map((file) => ({ key: `${file.name}-${file.size}-${Math.random()}`, src: URL.createObjectURL(file), file }))] });
-                        e.target.value = "";
-                      }} />
-                    </label>
-                  )}
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">{isShareable(r) ? "Shareable: add as many residents as you need when allocating." : "Single: rented to one tenant."}</p>
+              <FlatFields r={r} onChange={(p) => patch(r, p)} />
             </div>
           ))}
         </div>
@@ -168,11 +181,44 @@ export function BuildingFlatsModal({ floorCount, flats, onSave, onClose }: {
   );
 }
 
-// Card in the Rooms section: summary by floor and the button that opens the popup.
-export function BuildingFlatsCard({ floorCount, flats, onOpen }: { floorCount: number; flats: RoomState[]; onOpen: () => void }) {
+// Popup to edit one flat: same inputs as the floor popup, but only for this flat.
+function FlatEditModal({ flat, others, floorCount, onSave, onClose }: {
+  flat: RoomState; others: RoomState[]; floorCount: number; onSave: (f: RoomState) => void; onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<RoomState>(flat);
+  const [error, setError] = useState("");
+  const no = flatNo(draft.label).trim();
+
+  const save = () => {
+    if (!no) return setError("Every flat needs a flat number.");
+    if (others.some((o) => Number(o.floor) === Number(draft.floor) && flatNo(o.label).trim().toLowerCase() === no.toLowerCase())) return setError(`Flat ${no} is already added on floor ${draft.floor}.`);
+    // checks this flat's own fields (rent, BHK, bathrooms, area, furnishing)
+    const e = flatIssue([draft], floorCount);
+    if (e) return setError(e);
+    onSave(draft);
+  };
+
+  return (
+    <ConfigModal title="Edit flat" subtitle={`Floor ${draft.floor} · Flat ${flatNo(flat.label) || "—"}`} onClose={onClose} onSave={save} saveLabel="Save flat">
+      <div className="rounded-2xl bg-cream/60 p-4">
+        <FlatFields r={draft} onChange={(p) => setDraft((d) => ({ ...d, ...p }))} />
+      </div>
+      {error && <p role="alert" className="mt-4 rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">{error}</p>}
+    </ConfigModal>
+  );
+}
+
+// Card in the Rooms section: one row per floor with the number of flats and a dropdown that lists them.
+// Every flat in the list has a pencil that opens the editor for that flat.
+export function BuildingFlatsCard({ floorCount, flats, onOpen, onChange }: {
+  floorCount: number; flats: RoomState[]; onOpen: () => void; onChange: (flats: RoomState[]) => void;
+}) {
+  const [open, setOpen] = useState<Record<number, boolean>>({});
+  const [editing, setEditing] = useState<number | null>(null); // index in `flats`
   const issue = flats.length ? flatIssue(flats, floorCount) : null;
   const floorNos = Array.from({ length: floorCount }, (_, i) => i + 1);
   const rents = flats.map((f) => Number(f.rent)).filter((n) => n > 0);
+  const edited = editing != null ? flats[editing] : undefined;
   return (
     <div className="rounded-2xl bg-cream/60 p-4 sm:col-span-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -187,20 +233,48 @@ export function BuildingFlatsCard({ floorCount, flats, onOpen }: { floorCount: n
         <button type="button" onClick={onOpen} disabled={floorCount < 1} className={primaryBtn}>{flats.length ? "Edit flats" : "Generate floors & add flats"}</button>
       </div>
       {flats.length > 0 && (
-        <ul className="mt-3 space-y-1 text-sm">
+        <ul className="mt-3 space-y-2 text-sm">
           {floorNos.map((f) => {
-            const list = flats.filter((x) => Number(x.floor) === f);
-            const sh = list.filter(isShareable).length;
+            const list = flats.map((x, idx) => ({ x, idx })).filter(({ x }) => Number(x.floor) === f);
+            const isOpen = !!open[f] && list.length > 0;
             return (
-              <li key={f} className="flex flex-wrap justify-between gap-x-3">
-                <span>Floor {f}</span>
-                <span className="text-muted-foreground">{list.length ? `${list.map((x) => `${flatNo(x.label)} (${x.bhk} BHK)`).join(", ")} · ${list.length - sh} single, ${sh} shareable` : "No flats yet"}</span>
+              <li key={f} className="rounded-xl bg-background">
+                <button type="button" disabled={list.length === 0} aria-expanded={isOpen} onClick={() => setOpen((o) => ({ ...o, [f]: !o[f] }))} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left disabled:cursor-default">
+                  <span className="font-medium">Floor {f}</span>
+                  <span className="flex items-center gap-2 text-muted-foreground">
+                    {list.length ? `${list.length} ${list.length === 1 ? "flat" : "flats"}` : "No flats yet"}
+                    {list.length > 0 && <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />}
+                  </span>
+                </button>
+                {isOpen && (
+                  <ul className="space-y-1 border-t border-cream px-2 py-2">
+                    {list.map(({ x, idx }) => {
+                      const bad = flatIssue([x], floorCount) !== null;
+                      const furnish = FURNISH_OPTIONS.find(([v]) => v === x.furnishing)?.[1];
+                      return (
+                        <li key={x.id ?? idx} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-cream/60">
+                          <span className="min-w-0 flex-1">
+                            <span className="font-medium">Flat {flatNo(x.label) || "—"}</span>
+                            <span className={`ml-2 ${bad ? "text-destructive" : "text-muted-foreground"}`}>
+                              {bad ? "Details missing" : `${x.bhk} BHK · ${isShareable(x) ? "Shareable" : "Single"} · ${inr(Number(x.rent))} · ${x.sizeSqm} m²${furnish ? ` · ${furnish}` : ""}${(x.features ?? []).length ? ` · ${x.features!.length} features` : ""}`}
+                            </span>
+                          </span>
+                          <button type="button" aria-label={`Edit flat ${flatNo(x.label)}`} onClick={() => setEditing(idx)} className="shrink-0 rounded-full bg-cream p-2 hover:bg-muted"><Pencil className="h-4 w-4" /></button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}
         </ul>
       )}
       {issue && <p className="mt-3 rounded-xl bg-destructive/10 px-4 py-2 text-sm text-destructive">{issue}</p>}
+      {edited && editing != null && (
+        <FlatEditModal flat={edited} others={flats.filter((_, i) => i !== editing)} floorCount={floorCount}
+          onSave={(next) => { onChange(flats.map((f, i) => (i === editing ? next : f))); setEditing(null); }} onClose={() => setEditing(null)} />
+      )}
     </div>
   );
 }

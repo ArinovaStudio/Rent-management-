@@ -5,6 +5,7 @@ export type RoomState = {
   id?: string; label: string; capacity: string; ac: boolean; rent: string; occupied: string; floor: string;
   roomType: string; sizeSqm: string; bathAttached: boolean; bathArea: string; photos: RoomPhoto[];
   bhk?: string; baths?: string; furnishing?: string; // Building flats only
+  features?: string[]; // Building flats: features & finishes of this flat
 };
 export type CategoryMedia = {
   id?: string; capacity: number; mediaType: "IMAGE" | "VIDEO"; path?: string; originalName: string; src: string; file?: File;

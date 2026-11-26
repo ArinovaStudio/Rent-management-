@@ -16,7 +16,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ step: st
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
 
-  const profile = await prisma.ownerProfile.findUnique({ where: { userId: me.id }, include: { documents: true } });
+  const profile = await prisma.ownerProfile.findUnique({
+    where: { userId: me.id },
+    select: {
+      id: true, accountType: true, legalName: true, phone: true, idType: true, idNumberMasked: true,
+      completedSteps: true, onboardingCompletedAt: true,
+      documents: { select: { id: true, type: true, path: true } },
+    },
+  });
   if (!profile) return NextResponse.json({ error: "No owner profile on this account." }, { status: 404 });
   if (profile.onboardingCompletedAt) {
     return NextResponse.json({ error: "Your registration has already been submitted." }, { status: 409 });
@@ -157,9 +164,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ step: st
     const body: Record<string, unknown> = rawBody && typeof rawBody === "object" ? { ...rawBody } : {};
     // Managers don't choose a relationship: they act for the owner on their admin's appointment.
     if (me.role === "PROPERTY_MANAGER") {
-      const u = await prisma.user.findUnique({ where: { id: me.id }, select: { createdById: true } });
-      const creator = u?.createdById
-        ? await prisma.user.findUnique({ where: { id: u.createdById }, select: { name: true } })
+      // getCurrentUser already loaded createdById — skip a second user lookup.
+      const creator = me.createdById
+        ? await prisma.user.findUnique({ where: { id: me.createdById }, select: { name: true } })
         : null;
       body.propertyRelationship = "AUTHORIZED_MANAGER";
       body.authorityDetails = `Appointed as property manager by ${creator?.name ?? "the property admin"}.`;

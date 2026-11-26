@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getSessionUser } from "@/lib/current-user";
 import { STATUS_HELP, STATUS_LABEL } from "@/lib/owner-status";
 import { propertiesBase } from "@/lib/routes";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
@@ -14,23 +14,22 @@ const pill = "rounded-full bg-cream px-4 py-2 text-sm hover:bg-cream/70";
 
 // Everything a Property Admin or Manager sent for review, with the answer, in one place.
 export default async function RequestsPage() {
-  const me = await getCurrentUser();
+  const me = await getSessionUser();
   if (!me) redirect("/login");
   if (me.role === "SUPER_ADMIN") redirect("/admin/approvals");
   if (me.role === "PROPERTY_MANAGER") redirect("/dashboard/issues"); // managers keep everything about their tickets in Issues
-  const name = (me as unknown as { name?: string }).name ?? "Account";
+  const name = me.name ?? "Account";
   const base = propertiesBase(me.role);
 
-  const [user, properties] = await Promise.all([
-    prisma.user.findUnique({ where: { id: me.id }, include: { ownerProfile: true } }),
+  // Session covers id/role/name — only pull the owner profile + properties (no second user row).
+  const [profile, properties] = await Promise.all([
+    prisma.ownerProfile.findUnique({ where: { userId: me.id } }),
     prisma.property.findMany({
       where: { ownerId: me.id },
       select: { id: true, name: true, status: true, reviewNote: true, reviewedAt: true, createdAt: true, updatedAt: true },
       orderBy: { updatedAt: "desc" },
     }),
   ]);
-
-  const profile = user?.ownerProfile;
   const profileNeedsAction = !!profile && ["NEEDS_MORE_INFO", "REJECTED", "RESTRICTED"].includes(profile.verificationStatus);
   const sortedProps = [...properties].sort((a, b) => Number(ATTENTION.includes(b.status)) - Number(ATTENTION.includes(a.status)));
   const attention = (profileNeedsAction ? 1 : 0) + properties.filter((p) => ATTENTION.includes(p.status)).length;

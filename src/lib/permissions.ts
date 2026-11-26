@@ -1,9 +1,10 @@
 import type { Role } from "./jwt";
 import type { VerificationStatusValue } from "./owner-status";
 
+// Property Admins may create co-owners (Property Admin accounts) and managers from the property form.
 export const CAN_CREATE: Record<Role, Role[]> = {
   SUPER_ADMIN: ["PROPERTY_ADMIN", "PROPERTY_MANAGER"],
-  PROPERTY_ADMIN: ["PROPERTY_MANAGER"],
+  PROPERTY_ADMIN: ["PROPERTY_ADMIN", "PROPERTY_MANAGER"],
   PROPERTY_MANAGER: [],
 };
 

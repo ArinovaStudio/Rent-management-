@@ -1,7 +1,8 @@
-import type { OwnerProfile, SensitiveDocument, User } from "@prisma/client";
+import type { OwnerProfile, User } from "@prisma/client";
 import { POLICY_VERSIONS } from "./policies";
 
-type ProfileWithDocs = OwnerProfile & { documents: SensitiveDocument[] };
+type ClientDoc = { id: string; type: string; originalName: string; sizeBytes: number };
+type ProfileWithDocs = OwnerProfile & { documents: ClientDoc[] };
 
 // What the wizard is allowed to see. Deliberately a whitelist: no file paths, no hashes.
 export function toClientState(user: User, profile: ProfileWithDocs) {
@@ -48,4 +49,7 @@ export function toClientState(user: User, profile: ProfileWithDocs) {
   };
 }
 
-export const profileWithDocs = { documents: true } as const;
+// Only the document fields the wizard UI shows — never paths/hashes.
+export const profileWithDocs = {
+  documents: { select: { id: true, type: true, originalName: true, sizeBytes: true } },
+} as const;

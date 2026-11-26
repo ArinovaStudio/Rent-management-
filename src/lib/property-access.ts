@@ -23,3 +23,23 @@ export async function canOperateProperty( me: { id: string; role: Role }, proper
     me.role === "PROPERTY_MANAGER" && (await isAssignedManager(me.id, property.id)) && (await isVerifiedManager(me.id))
   );
 }
+
+// Shared by allocation APIs (checkout, bills, rent, tax, notify): only the columns those handlers read.
+export const operableAllocationSelect = {
+  id: true,
+  status: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  accessToken: true,
+  moveInDate: true,
+  monthlyRent: true,
+  taxRates: true,
+  roomLabel: true,
+  room: {
+    select: {
+      label: true,
+      property: { select: { id: true, ownerId: true, name: true, amenities: true } },
+    },
+  },
+} as const;

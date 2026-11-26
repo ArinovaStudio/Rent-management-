@@ -14,7 +14,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   const proof = await prisma.propertyAuthorityProof.findUnique({
     where: { propertyId: id },
-    include: { property: { select: { ownerId: true } } },
+    select: {
+      id: true, path: true, mimeType: true,
+      property: { select: { ownerId: true } },
+    },
   });
   if (!proof || (me.role !== "SUPER_ADMIN" && proof.property.ownerId !== me.id)) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });

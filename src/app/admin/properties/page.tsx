@@ -10,32 +10,46 @@ import { propertiesBase } from "@/lib/routes";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip, toneFor } from "@/app/admin/ui";
 import ActiveToggle from "@/components/admin/ActiveToggle";
+import PropertyFilterBar from "@/components/admin/PropertyFilterBar";
+import { ACTIVE_OPTIONS, STATUS_OPTIONS, TYPE_OPTIONS, applyPropertyFilters, hasFilters } from "@/lib/property-filter";
 
 const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment", BUILDING: "Building" } as const;
-const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
+const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Approved", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 
 // Super Admin card: cover photo, name, a short line, three stat tiles, then the On/Off switch and one Open button.
 // Whole card opens the property page. Everything else (rooms, ledger, edit, managers, delete) lives on that page.
-export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
+export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string; q?: string; status?: string; type?: string; active?: string }> }) {
   const me = await getSessionUser();
   if (!me) redirect("/login");
 
   const isManager = me.role === "PROPERTY_MANAGER";
-  if (!isManager && !canManageProperties(me.role, await getVerificationStatus(me.id))) redirect("/dashboard");
+  // Super Admin always may manage; skip the verification lookup for them.
+  if (!isManager && me.role !== "SUPER_ADMIN" && !canManageProperties(me.role, await getVerificationStatus(me.id))) {
+    redirect("/dashboard");
+  }
 
-  const { saved } = await searchParams;
-  const properties = await prisma.property.findMany({
+  const { saved, q, status, type, active } = await searchParams;
+  // Card UI only needs a few property fields + room rent/capacity and an active-allocation count.
+  const allProperties = await prisma.property.findMany({
     where: me.role === "SUPER_ADMIN" ? {} : isManager ? { managers: { some: { managerId: me.id } } } : { ownerId: me.id },
-    include: {
-      rooms: { include: { allocations: { where: { status: "ACTIVE" }, select: { id: true, occupants: true } } } },
+    select: {
+      id: true, name: true, description: true, type: true, address: true, city: true,
+      sharing: true, status: true, isActive: true,
       owner: { select: { name: true } },
       images: { orderBy: { sortOrder: "asc" }, take: 1, select: { path: true } },
-      _count: { select: { managers: true } },
+      rooms: {
+        select: {
+          capacity: true, roomType: true, rent: true,
+          _count: { select: { allocations: { where: { status: "ACTIVE" } } } },
+        },
+      },
     },
     orderBy: { createdAt: "desc" },
   });
+  const filters = { q, status, type, active };
+  const properties = applyPropertyFilters(allProperties, filters);
   const base = propertiesBase(me.role);
   const name = (me as unknown as { name?: string }).name ?? "Account";
 
@@ -56,12 +70,27 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
       {saved === "pending" && <p className="mb-6 rounded-2xl bg-primary/10 px-5 py-3 text-sm text-primary">Saved. It will go live once the Super Admin approves it.</p>}
       {saved === "live" && <p className="mb-6 rounded-2xl bg-primary/10 px-5 py-3 text-sm text-primary">Saved.</p>}
 
+      {allProperties.length > 0 && (
+        <PropertyFilterBar
+          groups={[
+            { key: "status", label: "Status", options: STATUS_OPTIONS },
+            { key: "type", label: "Property type", options: TYPE_OPTIONS },
+            { key: "active", label: "Active / Inactive", options: ACTIVE_OPTIONS },
+          ]}
+        />
+      )}
+
       {properties.length === 0 ? (
-        <Panel><p className="text-muted-foreground">No properties yet.</p></Panel>
+        <Panel><p className="text-muted-foreground">{allProperties.length > 0 && hasFilters(filters) ? "No properties match your search or filters." : "No properties yet."}</p></Panel>
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
           {properties.map((p) => {
-            const { cap, occ, full, wholeUnit, unlimited } = occupancy(p, p.rooms);
+            const roomsForOcc = p.rooms.map((r) => ({
+              capacity: r.capacity,
+              roomType: r.roomType,
+              activeCount: r._count.allocations,
+            }));
+            const { cap, occ, full, wholeUnit, unlimited } = occupancy(p, roomsForOcc);
             const cover = p.images[0]?.path;
             const rents = p.rooms.map((r) => r.rent).filter((n) => n > 0);
             const rentText = rents.length ? (Math.min(...rents) === Math.max(...rents) ? inr(rents[0]) : `${inr(Math.min(...rents))}+`) : "—";

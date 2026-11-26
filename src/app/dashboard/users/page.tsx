@@ -1,13 +1,13 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getSessionUser } from "@/lib/current-user";
 import { CAN_CREATE, canDelete } from "@/lib/permissions";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import CreateUserForm from "./create-user-form";
 import DeleteUserButton from "./delete-user-button";
 
 export default async function UsersPage() {
-  const me = await getCurrentUser();
+  const me = await getSessionUser();
   if (!me) redirect("/login");
 
   const roles = CAN_CREATE[me.role];
@@ -19,7 +19,7 @@ export default async function UsersPage() {
     select: { id: true, name: true, email: true, role: true, createdById: true },
     orderBy: { createdAt: "desc" },
   });
-  const name = (me as unknown as { name?: string }).name ?? "Account";
+  const name = me.name ?? "Account";
 
   return (
     <AdminShell role={me.role} name={name}>

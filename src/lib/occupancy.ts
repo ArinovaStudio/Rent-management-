@@ -1,8 +1,9 @@
-
-export type OccRoom = { capacity: number; roomType?: string | null; allocations: unknown[] };
+// List pages can pass `activeCount` from a Prisma `_count` instead of loading allocation rows.
+export type OccRoom = { capacity: number; roomType?: string | null; allocations?: unknown[]; activeCount?: number };
 export type OccProperty = { type: string; sharing: boolean };
 
 export const headcount = (allocs: readonly unknown[]) => allocs.length;
+const living = (r: OccRoom) => r.activeCount ?? r.allocations?.length ?? 0;
 // A flat rented as one unit where several people may live (Shared flat). No people limit, only a head count.
 // Older rows stored the limit as capacity > 1, so those count as shared too.
 export const isShareableUnit = (r: { roomType?: string | null; capacity: number }) => r.roomType === "SHAREABLE" || r.capacity > 1;
@@ -12,15 +13,15 @@ export const isWholeUnit = (p: OccProperty) => p.type !== "PG" && p.type !== "BU
 export function occupancy(p: OccProperty, rooms: OccRoom[]) {
   if (p.type === "BUILDING") {
     const cap = rooms.length;
-    const occ = rooms.filter((r) => r.allocations.length > 0).length;
+    const occ = rooms.filter((r) => living(r) > 0).length;
     return { cap, occ, full: cap > 0 && occ >= cap, wholeUnit: false, unlimited: false };
   }
   const wholeUnit = isWholeUnit(p);
   if (wholeUnit && rooms.some(isShareableUnit)) {
-    return { cap: 0, occ: rooms.reduce((s, r) => s + headcount(r.allocations), 0), full: false, wholeUnit: true, unlimited: true };
+    return { cap: 0, occ: rooms.reduce((s, r) => s + living(r), 0), full: false, wholeUnit: true, unlimited: true };
   }
   const cap = rooms.reduce((s, r) => s + r.capacity, 0);
-  const occ = rooms.reduce((s, r) => s + headcount(r.allocations), 0);
+  const occ = rooms.reduce((s, r) => s + living(r), 0);
   const full = (wholeUnit ? rooms.length > 0 : true) && occ >= cap;
   return { cap, occ, full, wholeUnit, unlimited: false };
 }

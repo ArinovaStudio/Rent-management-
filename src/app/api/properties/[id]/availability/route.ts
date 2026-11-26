@@ -17,7 +17,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!me) return fail("Not signed in.", 401);
 
   const { id } = await params;
-  const property = await prisma.property.findUnique({ where: { id } });
+  const property = await prisma.property.findUnique({ where: { id }, select: { id: true, ownerId: true } });
   if (!property || !(await canOperateProperty(me, property))) return fail("You can't manage this property.", 403);
 
   const body = (await req.json().catch(() => null)) as { roomId?: string; floor?: number; capacity?: number; ac?: boolean; active?: boolean; note?: string } | null;

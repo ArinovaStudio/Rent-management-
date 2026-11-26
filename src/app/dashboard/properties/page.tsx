@@ -13,38 +13,79 @@ import { Chip, toneFor } from "@/app/admin/ui";
 import RaiseIssue from "../issues/raise-issue";
 import ActiveToggle from "@/components/admin/ActiveToggle";
 import DeletePropertyButton from "@/components/admin/DeletePropertyButton";
+import PropertyFilterBar from "@/components/admin/PropertyFilterBar";
+import { ACTIVE_OPTIONS, STATUS_OPTIONS, TYPE_OPTIONS, applyPropertyFilters, hasFilters } from "@/lib/property-filter";
 
 const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment", BUILDING: "Building" } as const;
-const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
+const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Approved", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
 
 const pill = "rounded-full bg-background px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-black/15 transition-colors hover:bg-primary hover:text-primary-foreground hover:ring-primary";
 
-export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
+export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string; q?: string; status?: string; type?: string; active?: string }> }) {
   const me = await getSessionUser();
   if (!me) redirect("/login");
 
   const isManager = me.role === "PROPERTY_MANAGER";
-  const canManage = isManager || canManageProperties(me.role, await getVerificationStatus(me.id));
+  // Super Admin / managers never need the verification row; only Property Admins do.
+  const canManage =
+    isManager || me.role === "SUPER_ADMIN" || canManageProperties(me.role, await getVerificationStatus(me.id));
 
-  const { saved } = await searchParams;
-  const properties = await prisma.property.findMany({
-    where: me.role === "SUPER_ADMIN" ? {} : isManager ? { managers: { some: { managerId: me.id } } } : { OR: [{ ownerId: me.id }, { coOwners: { some: { userId: me.id } } }] },
-    include: {
-      rooms: {
-        include: {
-          allocations: {
-            where: { status: "ACTIVE" },
-            select: { id: true, occupants: true, fullName: true },
+  const { saved, q, status, type, active } = await searchParams;
+  const where =
+    me.role === "SUPER_ADMIN" ? {} : isManager ? { managers: { some: { managerId: me.id } } } : { OR: [{ ownerId: me.id }, { coOwners: { some: { userId: me.id } } }] };
+  const listFields = {
+    id: true, name: true, type: true, city: true, sharing: true, status: true, isActive: true,
+    inactiveNote: true, reviewNote: true, mapUrl: true, amenities: true, amenityCharges: true, ownerId: true,
+    owner: { select: { name: true } },
+    coOwners: { select: { userId: true, user: { select: { name: true } } } },
+  } as const;
+
+  // Managers need room/resident rows for RaiseIssue; everyone else only needs an active-allocation count.
+  const raw = isManager
+    ? await prisma.property.findMany({
+        where,
+        select: {
+          ...listFields,
+          rooms: {
+            select: {
+              id: true, label: true, floor: true, capacity: true, roomType: true,
+              allocations: { where: { status: "ACTIVE" }, select: { id: true, fullName: true } },
+            },
           },
         },
-      },
-      owner: { select: { name: true } },
-      coOwners: { select: { userId: true, user: { select: { name: true } } } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  const isAssignedCoOwner = properties.some((p) => p.coOwners.some((co) => co.userId === me.id));
+        orderBy: { createdAt: "desc" },
+      })
+    : await prisma.property.findMany({
+        where,
+        select: {
+          ...listFields,
+          rooms: {
+            select: {
+              capacity: true, roomType: true,
+              _count: { select: { allocations: { where: { status: "ACTIVE" } } } },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+  const allProperties = raw.map((p) => ({
+    ...p,
+    rooms: p.rooms.map((r) =>
+      "allocations" in r
+        ? {
+            capacity: r.capacity,
+            roomType: r.roomType,
+            activeCount: r.allocations.length,
+            issue: { id: r.id, label: r.label, floor: r.floor ?? null, residents: r.allocations.map((a) => ({ id: a.id, name: a.fullName })) },
+          }
+        : { capacity: r.capacity, roomType: r.roomType, activeCount: r._count.allocations },
+    ),
+  }));
+  const isAssignedCoOwner = allProperties.some((p) => p.coOwners.some((co) => co.userId === me.id));
   if (!canManage && !isAssignedCoOwner) redirect("/dashboard");
+  const filters = { q, status, type, active };
+  const properties = applyPropertyFilters(allProperties, filters);
   const base = propertiesBase(me.role);
   const name = (me as unknown as { name?: string }).name ?? "Account";
 
@@ -65,8 +106,18 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
       {saved === "pending" && <p className="mb-6 rounded-2xl bg-primary/10 px-5 py-3 text-sm text-primary">Saved. It will go live once the Super Admin approves it.</p>}
       {saved === "live" && <p className="mb-6 rounded-2xl bg-primary/10 px-5 py-3 text-sm text-primary">Saved.</p>}
 
+      {allProperties.length > 0 && (
+        <PropertyFilterBar
+          groups={[
+            { key: "status", label: "Status", options: STATUS_OPTIONS },
+            { key: "type", label: "Property type", options: TYPE_OPTIONS },
+            { key: "active", label: "Active / Inactive", options: ACTIVE_OPTIONS },
+          ]}
+        />
+      )}
+
       {properties.length === 0 ? (
-        <Panel><p className="text-muted-foreground">No properties yet.</p></Panel>
+        <Panel><p className="text-muted-foreground">{allProperties.length > 0 && hasFilters(filters) ? "No properties match your search or filters." : "No properties yet."}</p></Panel>
       ) : (
         <div className="space-y-4">
           {properties.map((p) => {
@@ -122,7 +173,12 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                   {isManager && (
                     <RaiseIssue
                       propertyId={p.id}
-                      properties={[{ id: p.id, name: p.name, recipients: [{ id: p.ownerId, name: p.owner.name, label: "Main owner" }, ...p.coOwners.map((c) => ({ id: c.userId, name: c.user.name, label: "Co-owner" }))], rooms: p.rooms.map((r) => ({ id: r.id, label: r.label, floor: r.floor ?? null, residents: r.allocations.map((a) => ({ id: a.id, name: a.fullName })) })) }]}
+                      properties={[{
+                        id: p.id,
+                        name: p.name,
+                        recipients: [{ id: p.ownerId, name: p.owner.name, label: "Main owner" }, ...p.coOwners.map((c) => ({ id: c.userId, name: c.user.name, label: "Co-owner" }))],
+                        rooms: p.rooms.flatMap((r) => ("issue" in r && r.issue ? [r.issue] : [])),
+                      }]}
                     />
                   )}
                   {!isManager && !isCoOwner && <Link className={pill} href={`${base}/${p.id}/edit`}>Edit</Link>}

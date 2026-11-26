@@ -7,6 +7,9 @@ export const FURNISHING = ["UNFURNISHED", "SEMI_FURNISHED", "FURNISHED"] as cons
 export const FACING = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
 export const AMENITY_PRESETS = ["Lift", "Power backup", "24x7 security", "CCTV", "Parking", "Gym", "Swimming pool", "Garden", "Play area", "Clubhouse", "24x7 water", "Wi-Fi"];
 export const FEATURE_PRESETS = ["Vitrified tiles", "Modular kitchen", "Wooden flooring", "False ceiling", "Granite countertops", "Wardrobes", "Balcony", "Smart locks", "Air conditioning"];
+// PG: shared facilities of the PG, and what each room has
+export const PG_AMENITY_PRESETS = ["Wi-Fi", "Meals included", "Housekeeping", "Laundry", "Power backup", "24x7 water", "Hot water", "CCTV", "24x7 security", "Common kitchen", "Water purifier (RO)", "Refrigerator", "Common TV area", "Study area", "Lift", "Parking"];
+export const PG_FEATURE_PRESETS = ["Bed with mattress", "Wardrobe", "Study table & chair", "Ceiling fan", "Air conditioning", "Geyser", "Curtains", "Window", "Balcony", "Charging points", "Locker"];
 export const ROOM_TYPES = ["Bedroom", "Master bedroom", "Living room", "Kitchen", "Dining", "Study", "Balcony", "Store room"];
 export const BATH_TYPES = ["Attached", "Common", "Master", "Powder room"];
 export const label = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replace(/_/g, " ");

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
-import { canOperateProperty } from "@/lib/property-access";
+import { canOperateProperty, operableAllocationSelect } from "@/lib/property-access";
 import { cleanPct } from "@/lib/invoice";
 import { rentPeriod } from "@/lib/bills";
 
@@ -10,7 +10,7 @@ const TYPES = ["ELECTRICITY", "WATER"] as const;
 async function load(id: string) {
   const me = await getCurrentUser();
   if (!me) return { error: NextResponse.json({ error: "Not signed in." }, { status: 401 }) };
-  const allocation = await prisma.allocation.findUnique({ where: { id }, include: { room: { include: { property: true } } } });
+  const allocation = await prisma.allocation.findUnique({ where: { id }, select: operableAllocationSelect });
   if (!allocation || !(await canOperateProperty(me, allocation.room.property))) {
     return { error: NextResponse.json({ error: "You can't manage this resident." }, { status: 403 }) };
   }

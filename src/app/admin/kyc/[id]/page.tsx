@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/admin";
 import { getHistory } from "@/lib/audit";
@@ -9,6 +10,11 @@ import { Card, Chip, PageTop, Row, toneFor } from "../../ui";
 import ReviewPanel from "../../review-panel";
 import HistoryList from "../../history-list";
 
+const ROLE_LABEL: Record<Role, string> = {
+  SUPER_ADMIN: "Super Admin",
+  PROPERTY_ADMIN: "Property Admin",
+  PROPERTY_MANAGER: "Property Manager",
+};
 const fmt = (d: Date | null) => (d ? d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—");
 const DOC_LABEL = { ID_DOCUMENT: "ID document", ADDRESS_PROOF: "Address proof", COMPANY_REGISTRATION: "Company registration", AUTHORITY_PROOF: "Authority proof" } as const;
 const link = "text-primary underline";
@@ -18,22 +24,27 @@ export default async function KycReview({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   const p = await prisma.ownerProfile.findUnique({
     where: { id },
-    include: { user: { select: { email: true, emailVerifiedAt: true } }, documents: true },
+    include: { user: { select: { email: true, emailVerifiedAt: true, role: true } }, documents: true },
   });
   if (!p) notFound();
 
   const [history, accessLogs] = await Promise.all([
     getHistory("OWNER_KYC", p.id),
-    prisma.documentAccessLog.findMany({
-      where: { documentId: { in: p.documents.map((d) => d.id) } },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    }),
+    p.documents.length === 0
+      ? Promise.resolve([])
+      : prisma.documentAccessLog.findMany({
+          where: { documentId: { in: p.documents.map((d) => d.id) } },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        }),
   ]);
-  const actors = await prisma.user.findMany({ where: { id: { in: accessLogs.map((l) => l.actorId) } }, select: { id: true, name: true } });
+  const actorIds = [...new Set(accessLogs.map((l) => l.actorId))];
+  const actors = actorIds.length === 0
+    ? []
+    : await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } });
   const actorName = new Map(actors.map((a) => [a.id, a.name]));
   const company = p.accountType === "COMPANY";
-  const name = (me as unknown as { name?: string }).name ?? "Admin";
+  const name = me.name ?? "Admin";
 
   return (
     <AdminShell role={me.role} name={name}>
@@ -51,6 +62,7 @@ export default async function KycReview({ params }: { params: Promise<{ id: stri
       <div className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-2">
           <Card title="Owner">
+            <Row label="Role">{ROLE_LABEL[p.user.role]}</Row>
             <Row label="Email">{p.user.email} ({p.user.emailVerifiedAt ? "verified" : "not verified"})</Row>
             <Row label="Mobile">{p.phone ?? "—"}{SMS_VERIFICATION_ENABLED ? ` (${p.phoneVerifiedAt ? "verified" : "not verified"})` : " (SMS verification not enabled)"}</Row>
             <Row label="Submitted">{fmt(p.onboardingCompletedAt)}</Row>

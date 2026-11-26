@@ -11,21 +11,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!me) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
 
   const { id } = await params;
+  // Edit only needs ids/paths for media + room labels/images/active-allocation counts — not full property JSON blobs.
   const property = await prisma.property.findUnique({
     where: { id },
-    include: {
+    select: {
+      id: true, ownerId: true, status: true, videoPath: true,
       rooms: {
-        include: {
-          allocations: {
-            where: { status: "ACTIVE" },
-            select: { id: true, occupants: true },
-          },
+        select: {
+          id: true, label: true, images: true,
+          allocations: { where: { status: "ACTIVE" }, select: { id: true } },
         },
       },
-      images: true,
-      categoryMedia: true,
-      documents: true,
-      authorityProof: true,
+      images: { select: { id: true, path: true } },
+      categoryMedia: { select: { id: true, capacity: true, mediaType: true, path: true } },
+      documents: { select: { id: true, path: true } },
+      authorityProof: { select: { path: true } },
     },
   });
   if (!property) return NextResponse.json({ error: "Property not found." }, { status: 404 });
@@ -240,7 +240,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params;
   const property = await prisma.property.findUnique({
     where: { id },
-    include: {
+    select: {
+      id: true, name: true, ownerId: true, status: true, videoPath: true,
       images: { select: { path: true } },
       documents: { select: { path: true } },
       categoryMedia: { select: { path: true } },
