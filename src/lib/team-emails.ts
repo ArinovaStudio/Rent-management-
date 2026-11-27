@@ -109,3 +109,51 @@ export async function emailManagerAssignment(
   ];
   await notify(manager.email, `You have been assigned to ${p.name}`, lines.join("\n"));
 }
+
+type Member = { id: string; name: string; email: string; role?: string };
+
+// Login details for an account an admin just created (holds the temporary password).
+export async function emailAccountCreated(
+  to: { name: string; email: string; role: string },
+  password: string,
+  createdBy: string,
+) {
+  const loginUrl = appUrl() ? `${appUrl()}/login` : null;
+  const roleLabel = to.role === "PROPERTY_MANAGER" ? "Property Manager" : "Property Admin (co-owner)";
+  await notify(
+    to.email,
+    "Your account has been created",
+    `Hi ${to.name},\n\n${createdBy} created a ${roleLabel} account for you.\n\n` +
+      `Your login details:\nLogin ID (email): ${to.email}\nTemporary password: ${password}\n\n` +
+      (loginUrl ? `Sign in here: ${loginUrl}\n\n` : "") +
+      `You do not need to verify your account. After you sign in, open Profile and change this temporary password to one only you know. Do not share it with anyone.`,
+  );
+}
+
+// Called once, after the property is saved. Sends the held login mail (people created in the property form)
+// and the "you were added" mail. Best effort: a mail problem never fails the save.
+export async function sendTeamEmailsAfterSave(
+  propertyId: string,
+  a: { coOwners: Member[]; managers: Member[]; logins: Record<string, string>; by: string },
+) {
+  const welcome = (m: Member) => {
+    const pw = a.logins[m.id];
+    return pw && m.role ? emailAccountCreated({ name: m.name, email: m.email, role: m.role }, pw, a.by) : Promise.resolve();
+  };
+  await Promise.allSettled([
+    ...a.coOwners.map((m) => welcome(m).then(() => emailCoOwnerAssignment(propertyId, m, a.by))),
+    ...a.managers.map((m) => welcome(m).then(() => emailManagerAssignment(propertyId, m, a.by))),
+  ]);
+}
+
+// Reads the { userId: temporaryPassword } map the property form sends for people created in this session.
+// Only accounts the caller created in the last day are honoured, so it can't be used to mail arbitrary text.
+export function parseLogins(raw: FormDataEntryValue | null): Record<string, string> {
+  if (typeof raw !== "string" || !raw || raw.length > 4000) return {};
+  try {
+    const o = JSON.parse(raw);
+    const out: Record<string, string> = {};
+    if (o && typeof o === "object") for (const [k, v] of Object.entries(o)) if (typeof v === "string" && v.length <= 200) out[k] = v;
+    return out;
+  } catch { return {}; }
+}

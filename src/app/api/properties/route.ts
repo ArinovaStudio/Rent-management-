@@ -5,7 +5,7 @@ import { canManageProperties } from "@/lib/permissions";
 import { parsePropertyForm, MAX_IMAGES, imageOrder } from "@/lib/property-form";
 import { saveFile, removeFile, saveSensitiveFile, removeSensitiveFile } from "@/lib/uploads";
 import { getVerificationStatus, hasUnfinishedOnboarding } from "@/lib/owner-status";
-import { emailCoOwnerAssignment, emailManagerAssignment } from "@/lib/team-emails";
+import { sendTeamEmailsAfterSave, parseLogins } from "@/lib/team-emails";
 import { MAX_CO_OWNERS, MAX_MANAGERS } from "@/lib/team-limits";
 
 export async function POST(req: Request) {
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Choose a primary owner before assigning a co-owner." }, { status: 400 });
   }
   const coOwnerUsers = coOwnerIds.length
-    ? await prisma.user.findMany({ where: { id: { in: coOwnerIds }, role: "PROPERTY_ADMIN" }, select: { id: true, name: true, email: true, createdById: true } })
+    ? await prisma.user.findMany({ where: { id: { in: coOwnerIds }, role: "PROPERTY_ADMIN" }, select: { id: true, name: true, email: true, role: true, createdById: true, createdAt: true } })
     : [];
   if (coOwnerUsers.length !== coOwnerIds.length) {
     return NextResponse.json({ error: "One or more co-owners are not valid Property Admin accounts." }, { status: 400 });
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "You can only add co-owners you created." }, { status: 403 });
   }
   const managerUsers = managerIds.length
-    ? await prisma.user.findMany({ where: { id: { in: managerIds }, role: "PROPERTY_MANAGER" }, select: { id: true, email: true, name: true, createdById: true } })
+    ? await prisma.user.findMany({ where: { id: { in: managerIds }, role: "PROPERTY_MANAGER" }, select: { id: true, email: true, name: true, role: true, createdById: true, createdAt: true } })
     : [];
   if (managerUsers.length !== managerIds.length) {
     return NextResponse.json({ error: "One or more managers are not valid Property Manager accounts." }, { status: 400 });
@@ -169,11 +169,12 @@ export async function POST(req: Request) {
     throw err;
   }
 
+  // People are mailed only now that the property is saved.
   const who = (me as unknown as { name?: string }).name ?? "A Property Admin";
-  await Promise.all([
-    ...coOwnerUsers.map((u) => emailCoOwnerAssignment(property.id, u, who)),
-    ...managerUsers.map((u) => emailManagerAssignment(property.id, u, who)),
-  ]);
+  const logins = parseLogins(fd.get("teamLogin"));
+  const fresh = Date.now() - 24 * 3600 * 1000;
+  for (const u of [...coOwnerUsers, ...managerUsers]) if (u.createdById !== me.id || u.createdAt.getTime() < fresh) delete logins[u.id];
+  await sendTeamEmailsAfterSave(property.id, { coOwners: coOwnerUsers, managers: managerUsers, logins, by: who });
 
   return NextResponse.json({ id: property.id, status }, { status: 201 });
 }

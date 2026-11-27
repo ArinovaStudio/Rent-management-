@@ -6,8 +6,8 @@ import { CAN_CREATE } from "@/lib/permissions";
 import type { Role } from "@/lib/jwt";
 import { maskIdNumber } from "@/lib/owner-validation";
 import { validateStaff } from "@/lib/staff-validation";
-import { removeSensitiveFile, saveSensitiveFile, type StoredSensitiveFile } from "@/lib/uploads";
-import { notify } from "@/lib/mailer";
+import { checkFile, removeFile, removeSensitiveFile, saveFile, saveSensitiveFile, type StoredSensitiveFile } from "@/lib/uploads";
+import { emailAccountCreated } from "@/lib/team-emails";
 
 const bad = (fieldErrors: Record<string, string>, status = 400) =>
   NextResponse.json({ error: "Check the highlighted fields.", fieldErrors }, { status });
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   fd.forEach((v, k) => { if (typeof v === "string") raw[k] = v; });
   const parsed = validateStaff(raw);
   if (!parsed.ok) return bad(parsed.fieldErrors);
-  const { name, email, password, phone, identity: d } = parsed.data;
+  const { name, email, password, phone, age, identity: d } = parsed.data;
 
   const pick = (field: string) => {
     const u = fd.get(field);
@@ -39,11 +39,17 @@ export async function POST(req: Request) {
   const idFile = pick("document");
   const fileErrors: Record<string, string> = {};
   if (!idFile) fileErrors.document = "Upload a photo or PDF of the person's ID.";
+  const photo = pick("photo");
+  const photoError = photo ? checkFile(photo, "image") : null;
+  if (photoError) fileErrors.photo = photoError;
   if (Object.keys(fileErrors).length) return bad(fileErrors);
 
   if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
     return NextResponse.json({ error: "An account with this email already exists.", fieldErrors: { email: "Already registered." } }, { status: 409 });
   }
+
+  // Person's photo goes to the public images folder (random file name) so next/image can resize and cache it.
+  const photoPath = photo ? await saveFile(photo, "images/people", "image") : null;
 
   let user;
   try {
@@ -57,7 +63,7 @@ export async function POST(req: Request) {
           create: {
             accountType: "INDIVIDUAL",
             legalName: name,
-            phone,
+            phone, age, photoPath,
             idType: d.idType,
             idNumberMasked: maskIdNumber(d.idNumber!), // required by validateStep2 here, so never null
             addressLine1: d.addressLine1, addressLine2: d.addressLine2,
@@ -72,6 +78,7 @@ export async function POST(req: Request) {
       select: { id: true, name: true, email: true, role: true, ownerProfile: { select: { id: true } } },
     });
   } catch (err) {
+    if (photoPath) await removeFile(photoPath);
     if ((err as { code?: string }).code === "P2002") {
       return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
     }
@@ -117,20 +124,13 @@ export async function POST(req: Request) {
   if (failure) {
     await prisma.user.delete({ where: { id: user.id } }); // cascades the profile and document rows
     await Promise.all(stored.map((s) => removeSensitiveFile(s.file.path)));
+    if (photoPath) await removeFile(photoPath);
     return bad({ [failure.field]: failure.error });
   }
 
-  // Login details go to the new person's email. No email/KYC verification step — only change the temporary password after first sign-in.
-  const loginUrl = process.env.APP_URL ? `${process.env.APP_URL.replace(/\/$/, "")}/login` : null;
-  const roleLabel = role === "PROPERTY_MANAGER" ? "Property Manager" : "Property Admin (co-owner)";
-  await notify(
-    email,
-    "Your account has been created",
-    `Hi ${name},\n\n${me.name} created a ${roleLabel} account for you.\n\n` +
-      `Your login details:\nLogin ID (email): ${email}\nTemporary password: ${password}\n\n` +
-      (loginUrl ? `Sign in here: ${loginUrl}\n\n` : "") +
-      `You do not need to verify your account. After you sign in, open Profile and change this temporary password to one only you know. Do not share it with anyone.`
-  );
+  // Login details go to the new person's email, unless the property form holds them until the property is saved.
+  // No email/KYC verification step: they only change the temporary password after first sign-in.
+  if (fd.get("deferEmail") !== "1") await emailAccountCreated({ name, email, role }, password, me.name);
 
   return NextResponse.json({ id: user.id, name: user.name, email: user.email, role: user.role }, { status: 201 });
 }

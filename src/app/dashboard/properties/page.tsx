@@ -1,89 +1,55 @@
+import { occupancy } from "@/lib/occupancy";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus } from "lucide-react";
-import { occupancy } from "@/lib/occupancy";
+import { Building2, MapPin, Plus } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/current-user";
 import { canManageProperties } from "@/lib/permissions";
 import { getVerificationStatus } from "@/lib/owner-status";
 import { propertiesBase } from "@/lib/routes";
-import { amenityCharges } from "@/lib/amenity-charges";
 import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip, toneFor } from "@/app/admin/ui";
-import RaiseIssue from "../issues/raise-issue";
 import ActiveToggle from "@/components/admin/ActiveToggle";
-import DeletePropertyButton from "@/components/admin/DeletePropertyButton";
 import PropertyFilterBar from "@/components/admin/PropertyFilterBar";
 import { ACTIVE_OPTIONS, STATUS_OPTIONS, TYPE_OPTIONS, applyPropertyFilters, hasFilters } from "@/lib/property-filter";
 
 const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment", BUILDING: "Building" } as const;
 const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Approved", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
 
-const pill = "rounded-full bg-background px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-black/15 transition-colors hover:bg-primary hover:text-primary-foreground hover:ring-primary";
+const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 
+// Property card, same for every role: cover photo, name, a short line, three stat tiles, then the On/Off switch and one Open button.
+// Whole card opens the property page. Everything else (rooms, ledger, edit, managers, delete) lives on that page.
 export default async function PropertiesPage({ searchParams }: { searchParams: Promise<{ saved?: string; q?: string; status?: string; type?: string; active?: string }> }) {
   const me = await getSessionUser();
   if (!me) redirect("/login");
 
   const isManager = me.role === "PROPERTY_MANAGER";
-  // Super Admin / managers never need the verification row; only Property Admins do.
-  const canManage =
-    isManager || me.role === "SUPER_ADMIN" || canManageProperties(me.role, await getVerificationStatus(me.id));
+  const isSuper = me.role === "SUPER_ADMIN";
+  // Super Admin / managers skip the verification lookup. A Property Admin who is not verified can still see
+  // properties they were added to as a co-owner (checked below).
+  const canManage = isManager || isSuper || canManageProperties(me.role, await getVerificationStatus(me.id));
 
   const { saved, q, status, type, active } = await searchParams;
-  const where =
-    me.role === "SUPER_ADMIN" ? {} : isManager ? { managers: { some: { managerId: me.id } } } : { OR: [{ ownerId: me.id }, { coOwners: { some: { userId: me.id } } }] };
-  const listFields = {
-    id: true, name: true, type: true, city: true, sharing: true, status: true, isActive: true,
-    inactiveNote: true, reviewNote: true, mapUrl: true, amenities: true, amenityCharges: true, ownerId: true,
-    owner: { select: { name: true } },
-    coOwners: { select: { userId: true, user: { select: { name: true } } } },
-  } as const;
-
-  // Managers need room/resident rows for RaiseIssue; everyone else only needs an active-allocation count.
-  const raw = isManager
-    ? await prisma.property.findMany({
-        where,
+  // Card UI only needs a few property fields + room rent/capacity and an active-allocation count.
+  const allProperties = await prisma.property.findMany({
+    where: isSuper ? {} : isManager ? { managers: { some: { managerId: me.id } } } : { OR: [{ ownerId: me.id }, { coOwners: { some: { userId: me.id } } }] },
+    select: {
+      id: true, name: true, description: true, type: true, address: true, city: true,
+      sharing: true, status: true, isActive: true, ownerId: true,
+      owner: { select: { name: true } },
+      coOwners: { where: { userId: me.id }, select: { userId: true } },
+      images: { orderBy: { sortOrder: "asc" }, take: 1, select: { path: true } },
+      rooms: {
         select: {
-          ...listFields,
-          rooms: {
-            select: {
-              id: true, label: true, floor: true, capacity: true, roomType: true,
-              allocations: { where: { status: "ACTIVE" }, select: { id: true, fullName: true } },
-            },
-          },
+          capacity: true, roomType: true, rent: true,
+          _count: { select: { allocations: { where: { status: "ACTIVE" } } } },
         },
-        orderBy: { createdAt: "desc" },
-      })
-    : await prisma.property.findMany({
-        where,
-        select: {
-          ...listFields,
-          rooms: {
-            select: {
-              capacity: true, roomType: true,
-              _count: { select: { allocations: { where: { status: "ACTIVE" } } } },
-            },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-  const allProperties = raw.map((p) => ({
-    ...p,
-    rooms: p.rooms.map((r) =>
-      "allocations" in r
-        ? {
-            capacity: r.capacity,
-            roomType: r.roomType,
-            activeCount: r.allocations.length,
-            issue: { id: r.id, label: r.label, floor: r.floor ?? null, residents: r.allocations.map((a) => ({ id: a.id, name: a.fullName })) },
-          }
-        : { capacity: r.capacity, roomType: r.roomType, activeCount: r._count.allocations },
-    ),
-  }));
-  const isAssignedCoOwner = allProperties.some((p) => p.coOwners.some((co) => co.userId === me.id));
-  if (!canManage && !isAssignedCoOwner) redirect("/dashboard");
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!canManage && !allProperties.some((p) => p.coOwners.length > 0)) redirect("/dashboard");
   const filters = { q, status, type, active };
   const properties = applyPropertyFilters(allProperties, filters);
   const base = propertiesBase(me.role);
@@ -93,7 +59,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
     <AdminShell role={me.role} name={name}>
       <PageHeader
         title="Properties"
-        sub={isManager ? "Properties you manage." : "Manage your listings, rooms and tenants."}
+        sub={isManager ? "Properties you manage. Click one to open it." : "Click a property to open it."}
         action={
           !isManager && canManage && (
             <Link href={`${base}/new`} className="flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-primary-foreground hover:bg-ink">
@@ -119,77 +85,59 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
       {properties.length === 0 ? (
         <Panel><p className="text-muted-foreground">{allProperties.length > 0 && hasFilters(filters) ? "No properties match your search or filters." : "No properties yet."}</p></Panel>
       ) : (
-        <div className="space-y-4">
+        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
           {properties.map((p) => {
-            const isCoOwner = p.coOwners.some((co) => co.userId === me.id) && p.ownerId !== me.id;
-            const { cap, occ, full, wholeUnit, unlimited } = occupancy(p, p.rooms);
-            const priced = new Map(amenityCharges(p).list.map((x) => [x.name, x.charge]));
-            const pct = cap ? Math.min(100, Math.round((occ / cap) * 100)) : 0;
+            const isCoOwner = p.coOwners.length > 0 && p.ownerId !== me.id;
+            const roomsForOcc = p.rooms.map((r) => ({
+              capacity: r.capacity,
+              roomType: r.roomType,
+              activeCount: r._count.allocations,
+            }));
+            const { cap, occ, full, wholeUnit, unlimited } = occupancy(p, roomsForOcc);
+            const cover = p.images[0]?.path;
+            const rents = p.rooms.map((r) => r.rent).filter((n) => n > 0);
+            const rentText = rents.length ? (Math.min(...rents) === Math.max(...rents) ? inr(rents[0]) : `${inr(Math.min(...rents))}+`) : "—";
+            const typeText = `${TYPE_LABEL[p.type]}${p.sharing && p.type !== "PG" && p.type !== "BUILDING" ? " (sharing)" : ""}`;
+            const unitWord = p.type === "BUILDING" ? "Flats" : wholeUnit ? "Unit" : "Rooms";
+            const occValue = wholeUnit ? (occ === 0 ? "Vacant" : full ? "Full" : "Rented") : unlimited ? `${occ}` : `${occ}/${cap}`;
+
             return (
-              <Panel key={p.id}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="truncate text-xl font-semibold">{p.name}</h2>
-                    <p className="text-sm text-muted-foreground">
-                      {TYPE_LABEL[p.type]}{p.sharing && p.type !== "PG" && p.type !== "BUILDING" ? " (sharing)" : ""} · {p.city}
-                      {me.role === "SUPER_ADMIN" && ` · Owner: ${p.owner.name}`}
-                      {isCoOwner && " · Co-owner access"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {!isCoOwner && <ActiveToggle propertyId={p.id} active={p.isActive} />}
-                    <Chip tone={toneFor(p.status)}>{STATUS_LABEL[p.status]}</Chip>
-                  </div>
-                </div>
+              <div key={p.id} className="group relative flex flex-col rounded-[1.75rem] bg-background p-4 shadow-[0_8px_30px_rgba(0,0,0,0.06)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(0,0,0,0.12)] motion-reduce:transition-none motion-reduce:hover:translate-y-0">
+                {/* Whole card opens the property page. Toggle and button sit above it. */}
+                <Link href={`${base}/${p.id}`} aria-label={`Open ${p.name}`} className="absolute inset-0 z-0 rounded-[1.75rem]" />
 
-                <div className="mt-4">
-                  <div className="mb-1 flex justify-between text-sm">
-                    <span>{wholeUnit ? (unlimited ? `${occ} ${occ === 1 ? "person" : "people"} living here` : `${occ}/${cap} people living here`) : (p.type === "BUILDING" ? `${occ}/${cap} flats rented` : `Occupancy ${occ}/${cap}`)}</span>
-                    <span className="text-muted-foreground">{wholeUnit ? (occ === 0 ? "Vacant" : full ? "Full" : "Rented") : full ? "No rooms available" : `${cap - occ} available`}</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-cream">
-                    <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-
-                {p.amenities.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                    {p.amenities.map((a) => (
-                      <span key={a} className="rounded-full bg-cream px-3 py-1">{a} · {priced.has(a) ? `₹${priced.get(a)!.toLocaleString("en-IN")}/mo` : "Included"}</span>
-                    ))}
-                  </div>
-                )}
-                {!p.isActive && <p className="mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">Inactive{p.inactiveNote ? `: ${p.inactiveNote}` : ""}</p>}
-
-                {p.status === "REJECTED" && p.reviewNote && (
-                  <p className="mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">Rejected: {p.reviewNote}</p>
-                )}
-                {p.status === "NEEDS_MORE_INFO" && p.reviewNote && (
-                  <p className="mt-4 rounded-2xl bg-cream px-4 py-3 text-sm">More information needed: {p.reviewNote}</p>
-                )}
-
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {p.mapUrl && <a className={pill} href={p.mapUrl} target="_blank" rel="noreferrer">View on map</a>}
-                  {isManager && (
-                    <RaiseIssue
-                      propertyId={p.id}
-                      properties={[{
-                        id: p.id,
-                        name: p.name,
-                        recipients: [{ id: p.ownerId, name: p.owner.name, label: "Main owner" }, ...p.coOwners.map((c) => ({ id: c.userId, name: c.user.name, label: "Co-owner" }))],
-                        rooms: p.rooms.flatMap((r) => ("issue" in r && r.issue ? [r.issue] : [])),
-                      }]}
-                    />
+                <div className="pointer-events-none relative h-44 overflow-hidden rounded-2xl bg-cream">
+                  {cover ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={`/api/uploads/${cover}`} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 motion-reduce:transition-none" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-muted-foreground"><Building2 className="h-12 w-12" /></div>
                   )}
-                  {!isManager && !isCoOwner && <Link className={pill} href={`${base}/${p.id}/edit`}>Edit</Link>}
-                  {!isManager && !isCoOwner && <Link className={pill} href={`${base}/${p.id}/managers`}>Managers</Link>}
-                  {isCoOwner
-                    ? <Link className={pill} href={`${base}/${p.id}/co-owner-documents`}>Submit co-owner proof documents</Link>
-                    : <Link className={pill} href={`${base}/${p.id}/rooms`}>Room status & allocations</Link>}
-                  {!isCoOwner && <Link className={pill} href={`${base}/${p.id}/ledger`}>Payment ledger</Link>}
-                  {!isManager && !isCoOwner && <DeletePropertyButton propertyId={p.id} propertyName={p.name} />}
+                  <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+                    <Chip tone={toneFor(p.status)}>{STATUS_LABEL[p.status]}</Chip>
+                    {!p.isActive && <Chip tone="bad">Inactive</Chip>}
+                  </div>
                 </div>
-              </Panel>
+
+                <div className="pointer-events-none relative mt-4 flex flex-1 flex-col">
+                  <h2 className="truncate text-xl font-semibold">{p.name}</h2>
+                  <p className="mt-0.5 flex items-center gap-1 truncate text-sm text-muted-foreground"><MapPin className="h-3.5 w-3.5 shrink-0" />{typeText} · {p.city}</p>
+                  {isSuper && <p className="truncate text-sm text-muted-foreground">Owner: {p.owner.name}</p>}
+                  {isCoOwner && <p className="truncate text-sm text-muted-foreground">Co-owner access · Owner: {p.owner.name}</p>}
+                  <p className="mt-3 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">{p.description || `${p.address}, ${p.city}`}</p>
+
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-xl bg-cream/70 px-2 py-2.5"><p className="text-[0.7rem] text-muted-foreground">{unitWord}</p><p className="text-base font-semibold">{p.rooms.length}</p></div>
+                    <div className="rounded-xl bg-cream/70 px-2 py-2.5"><p className="text-[0.7rem] text-muted-foreground">{wholeUnit ? "Status" : "Filled"}</p><p className="text-base font-semibold">{occValue}</p></div>
+                    <div className="rounded-xl bg-cream/70 px-2 py-2.5"><p className="text-[0.7rem] text-muted-foreground">Rent / mo</p><p className="truncate text-base font-semibold">{rentText}</p></div>
+                  </div>
+                </div>
+
+                <div className="relative z-10 mt-4 flex items-center justify-between gap-3">
+                  {isCoOwner ? <span /> : <ActiveToggle propertyId={p.id} active={p.isActive} />}
+                  <Link href={`${base}/${p.id}`} className="rounded-full bg-ink px-6 py-2.5 text-sm font-medium text-ink-foreground transition-colors hover:bg-primary">Open</Link>
+                </div>
+              </div>
             );
           })}
         </div>

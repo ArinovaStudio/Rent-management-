@@ -3,7 +3,7 @@ import {
   type FieldErrors, type Result, type Step2Data,
 } from "./owner-validation";
 
-export type StaffData = { name: string; email: string; password: string; phone: string; identity: Step2Data };
+export type StaffData = { name: string; email: string; password: string; phone: string; age: number | null; identity: Step2Data };
 
 export function validateStaff(input: Record<string, unknown>): Result<StaffData> {
   const e: FieldErrors = {};
@@ -21,6 +21,11 @@ export function validateStaff(input: Record<string, unknown>): Result<StaffData>
   const phone = normalizeMobile(String(input.phone ?? ""));
   if (!phone) e.phone = "Enter a valid 10-digit mobile number.";
 
+  // Age is optional; when given it must be a whole number from 18 to 100.
+  const ageRaw = String(input.age ?? "").trim();
+  const age = ageRaw ? Number(ageRaw) : null;
+  if (age !== null && (!Number.isInteger(age) || age < 18 || age > 100)) e.age = "Enter an age between 18 and 100.";
+
   if (input.consentDeclared !== "on" && input.consentDeclared !== "true") {
     e.consentDeclared = "Confirm you collected these documents with the person's consent.";
   }
@@ -29,5 +34,5 @@ export function validateStaff(input: Record<string, unknown>): Result<StaffData>
   if (!id.ok) Object.assign(e, id.fieldErrors);
 
   if (Object.keys(e).length || !id.ok) return { ok: false, fieldErrors: e };
-  return { ok: true, data: { name, email, password, phone: phone!, identity: id.data } };
+  return { ok: true, data: { name, email, password, phone: phone!, age, identity: id.data } };
 }

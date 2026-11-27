@@ -5,6 +5,8 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canEditProperty } from "@/lib/permissions";
 import { parsePropertyForm, MAX_IMAGES, imageOrder } from "@/lib/property-form";
 import { saveFile, removeFile, saveSensitiveFile, removeSensitiveFile } from "@/lib/uploads";
+import { sendTeamEmailsAfterSave, parseLogins } from "@/lib/team-emails";
+import { MAX_CO_OWNERS, MAX_MANAGERS } from "@/lib/team-limits";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const me = await getCurrentUser();
@@ -26,6 +28,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       categoryMedia: { select: { id: true, capacity: true, mediaType: true, path: true } },
       documents: { select: { id: true, path: true } },
       authorityProof: { select: { path: true } },
+      coOwners: { select: { userId: true } },
+      managers: { select: { managerId: true } },
     },
   });
   if (!property) return NextResponse.json({ error: "Property not found." }, { status: 404 });
@@ -37,6 +41,25 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!fd) return NextResponse.json({ error: "Invalid form data." }, { status: 400 });
   const parsed = parsePropertyForm(fd, me.role);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+
+  // People added in the form (already-created accounts). Checked now, linked and mailed only after the save succeeds.
+  const linkedCo = new Set(property.coOwners.map((c) => c.userId));
+  const linkedMgr = new Set(property.managers.map((m) => m.managerId));
+  const ids = (k: string) => [...new Set(fd.getAll(k).map((v) => String(v).trim()).filter(Boolean))];
+  const newCoIds = ids("coOwnerIds").filter((x) => !linkedCo.has(x));
+  const newMgrIds = ids("managerIds").filter((x) => !linkedMgr.has(x));
+  const [newCo, newMgr] = await Promise.all([
+    newCoIds.length ? prisma.user.findMany({ where: { id: { in: newCoIds }, role: "PROPERTY_ADMIN" }, select: { id: true, name: true, email: true, role: true, createdById: true, createdAt: true } }) : [],
+    newMgrIds.length ? prisma.user.findMany({ where: { id: { in: newMgrIds }, role: "PROPERTY_MANAGER" }, select: { id: true, name: true, email: true, role: true, createdById: true, createdAt: true } }) : [],
+  ]);
+  if (newCo.length !== newCoIds.length) return NextResponse.json({ error: "One or more co-owners are not valid Property Admin accounts." }, { status: 400 });
+  if (newMgr.length !== newMgrIds.length) return NextResponse.json({ error: "One or more managers are not valid Property Manager accounts." }, { status: 400 });
+  if (newCoIds.includes(property.ownerId)) return NextResponse.json({ error: "The primary owner can't also be a co-owner." }, { status: 400 });
+  if (linkedCo.size + newCo.length > MAX_CO_OWNERS) return NextResponse.json({ error: `A property can have at most ${MAX_CO_OWNERS} co-owners.` }, { status: 400 });
+  if (linkedMgr.size + newMgr.length > MAX_MANAGERS) return NextResponse.json({ error: `A property can have at most ${MAX_MANAGERS} managers.` }, { status: 400 });
+  if (me.role === "PROPERTY_ADMIN" && [...newCo, ...newMgr].some((u) => u.createdById !== me.id)) {
+    return NextResponse.json({ error: "You can only add people you created." }, { status: 403 });
+  }
 
   // Images: existing ones minus removed ones plus new ones must stay within the limit.
   const removeImages = property.images.filter((i) => parsed.removeImageIds.includes(i.id));
@@ -212,6 +235,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         data: imagePaths.map((path, i) => ({ propertyId: id, path, sortOrder: order.indexOf(`new:${i}`) })),
       }),
       prisma.propertyDocument.createMany({ data: docRows.map((d) => ({ ...d, propertyId: id })) }),
+      ...(newCo.length ? [prisma.propertyCoOwner.createMany({ data: newCo.map((u) => ({ propertyId: id, userId: u.id, assignedById: me.id })), skipDuplicates: true })] : []),
+      ...(newMgr.length ? [prisma.propertyManager.createMany({ data: newMgr.map((u) => ({ propertyId: id, managerId: u.id, assignedById: me.id })), skipDuplicates: true })] : []),
     ]);
   } catch (err) {
     if (proofData) await removeSensitiveFile(proofData.path);
@@ -226,6 +251,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (proofData && property.authorityProof) await removeSensitiveFile(property.authorityProof.path);
   if (videoPath !== undefined && property.videoPath) await removeFile(property.videoPath);
   
+  // People are mailed only now that the property is saved.
+  if (newCo.length || newMgr.length) {
+    const logins = parseLogins(fd.get("teamLogin"));
+    const fresh = Date.now() - 24 * 3600 * 1000;
+    for (const u of [...newCo, ...newMgr]) if (u.createdById !== me.id || u.createdAt.getTime() < fresh) delete logins[u.id];
+    await sendTeamEmailsAfterSave(id, { coOwners: newCo, managers: newMgr, logins, by: (me as unknown as { name?: string }).name ?? "A Property Admin" });
+  }
+
   return NextResponse.json({ id, status: review.status });
 }
 

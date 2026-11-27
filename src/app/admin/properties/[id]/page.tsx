@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -177,3 +178,6 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
     </AdminShell>
   );
 }
+=======
+export { default } from "@/app/dashboard/properties/[id]/page";
+>>>>>>> Stashed changes

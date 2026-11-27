@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import PasswordInput from "@/components/PasswordInput";
 import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { authFetch } from "@/lib/fetch-auth";
 import { toast } from "@/lib/toast";
@@ -21,11 +22,11 @@ function NewPasswordFields({ pw, setPw, again, setAgain }: { pw: string; setPw: 
   return (
     <>
       <label className={lbl}>New password
-        <input className="field" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+        <PasswordInput className="field" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
         <span className="text-xs text-muted-foreground">At least 8 characters.</span>
       </label>
       <label className={lbl}>Confirm new password
-        <input className="field" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
+        <PasswordInput className="field" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
       </label>
     </>
   );
@@ -59,7 +60,7 @@ function ChangeTemporaryPassword() {
         <p className="mt-1 text-sm text-muted-foreground">Your account was created for you with a temporary password. Choose your own so only you know it.</p>
       </div>
       <label className={lbl}>Current (temporary) password
-        <input className="field" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        <PasswordInput className="field" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
       </label>
       <NewPasswordFields pw={pw} setPw={setPw} again={again} setAgain={setAgain} />
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

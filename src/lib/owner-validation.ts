@@ -18,6 +18,15 @@ export const ID_TYPE_LABEL: Record<IdTypeValue, string> = {
   DRIVING_LICENSE: "Driving licence",
 };
 
+// Example shown inside the ID number box for each ID type.
+export const ID_PLACEHOLDER: Record<IdTypeValue, string> = {
+  AADHAAR: "e.g. 1234 5678 9012",
+  PAN: "e.g. ABCDE1234F",
+  PASSPORT: "e.g. A1234567",
+  VOTER_ID: "e.g. ABC1234567",
+  DRIVING_LICENSE: "e.g. MP09 20110012345",
+};
+
 export const RELATIONSHIP_LABEL: Record<RelationshipValue, string> = {
   OWNER: "I am the owner",
   CO_OWNER: "I am a co-owner",

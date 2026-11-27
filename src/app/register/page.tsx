@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authFetch } from "@/lib/fetch-auth";
+import PasswordInput from "@/components/PasswordInput";
 import {
-  ID_TYPES, ID_TYPE_LABEL, RELATIONSHIPS, RELATIONSHIP_LABEL,
+  ID_PLACEHOLDER, ID_TYPES, ID_TYPE_LABEL, RELATIONSHIPS, RELATIONSHIP_LABEL,
   validateRegister, validateStep1, validateStep2, validateStep3,
   type FieldErrors, type IdTypeValue, type AccountTypeValue,
 } from "@/lib/owner-validation";
@@ -233,7 +234,7 @@ export default function RegisterPage() {
           </label>
           {!signedIn && (
             <label>Password
-              <input {...field("password")} type="password" autoComplete="new-password" required />
+              <PasswordInput {...field("password")} autoComplete="new-password" required />
               <span className="hint">8 to 72 characters.</span>
               <Err k="password" />
             </label>
@@ -283,7 +284,7 @@ export default function RegisterPage() {
               <Err k="idType" />
             </label>
             <label>ID number
-              <input {...field("idNumber")} autoComplete="off" inputMode="text" />
+              <input {...field("idNumber")} autoComplete="off" inputMode="text" placeholder={ID_PLACEHOLDER[v.idType as IdTypeValue]} />
               {idHint && <span className="hint">{idHint}</span>}
               <span className="hint">We keep only the last 4 characters. The full number isn&apos;t stored.</span>
               <Err k="idNumber" />

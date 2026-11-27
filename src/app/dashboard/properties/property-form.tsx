@@ -14,7 +14,7 @@ import {
 } from "@/lib/property-fields";
 import { canWriteField } from "@/lib/permissions";
 import type { Role } from "@/lib/jwt";
-import { propertiesBase } from "@/lib/routes";
+import { propertiesBase, propertyHome } from "@/lib/routes";
 import { blankRoom, sm, type CategoryMedia, type RoomState } from "./room-types";
 import FloorGeneratorModal from "./floor-generator";
 import CategoryMediaModal from "./room-generator";
@@ -145,6 +145,7 @@ export default function PropertyForm({ initial, owners, role, listedBy, property
   const L = initial?.listing;
   const can = (f: string) => canWriteField(role, f);
   const base = propertiesBase(role);
+  const backTo = editing && (propertyId ?? initial?.id) ? propertyHome(role, (propertyId ?? initial?.id) as string) : base;
   const [price, setPrice] = useState(L?.price != null ? String(L.price) : "");
   const [area, setArea] = useState(L?.builtUpAreaSqm != null ? String(L.builtUpAreaSqm) : "");
   // Whole-unit (non-sharing) properties describe their rooms here; saved into the listing layout fields
@@ -398,12 +399,12 @@ export default function PropertyForm({ initial, owners, role, listedBy, property
       {modal === "bedrooms" && <BedroomConfigModal sharing={sharing} cards={sharing ? rooms : unitRooms} declaredRooms={declaredRooms} maxSeats={maxSeats} onSave={saveBedrooms} onClose={() => setModal(null)} />}
 
       <div className="mb-8 flex flex-wrap items-center gap-4">
-        <Link href={base} aria-label="Back" className="flex h-11 w-11 items-center justify-center rounded-full bg-background hover:bg-cream"><ArrowLeft className="h-5 w-5" /></Link>
+        <Link href={backTo} aria-label="Back" className="flex h-11 w-11 items-center justify-center rounded-full bg-background hover:bg-cream"><ArrowLeft className="h-5 w-5" /></Link>
         <div className="mr-auto">
           <h1 className="text-4xl font-medium tracking-tight">{editing ? "Edit property" : "Add property"}</h1>
           <p className="text-muted-foreground">{editing ? initial!.name : "Fill in every detail tenants see on the listing page."}</p>
         </div>
-        <Link href={base} className="rounded-full bg-background px-6 py-3">Cancel</Link>
+        <Link href={backTo} className="rounded-full bg-background px-6 py-3 font-medium shadow-sm ring-1 ring-black/15">Cancel</Link>
         <button disabled={busy} className="rounded-full bg-primary px-6 py-3 text-primary-foreground hover:bg-ink disabled:opacity-60">
           {busy ? "Saving…" : editing ? "Update property" : "Create property"}
         </button>

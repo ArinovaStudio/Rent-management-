@@ -1,5 +1,5 @@
 "use client";
-import { useId, useState, type InputHTMLAttributes, type ReactNode } from "react";
+import { useId, useRef, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import { Check, FileText, Loader2, Upload, X } from "lucide-react";
 
 export type Pair = { a: string; b: string };
@@ -201,6 +201,7 @@ export function TagPicker({ presets, value, onChange, label, charges, onChargeCh
 /** Dashed drop-style file picker (still a real <input type="file" name=...> so FormData picks it up). */
 export function FileDrop({ name, accept, title, hint, wide = true, req, onClear }: { name: string; accept: string; title: string; hint: string; wide?: boolean; req?: boolean; onClear?: () => void }) {
   const [file, setFile] = useState("");
+  const input = useRef<HTMLInputElement>(null);
   return (
     <label className={`flex min-w-0 cursor-pointer items-center gap-4 rounded-2xl border-2 border-dashed border-primary/30 bg-cream/60 px-5 py-4 transition-colors hover:border-primary hover:bg-primary/5 ${wide ? "sm:col-span-2" : ""}`}>
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-background text-primary">{file ? <FileText className="h-5 w-5" /> : <Upload className="h-5 w-5" />}</span>
@@ -208,8 +209,8 @@ export function FileDrop({ name, accept, title, hint, wide = true, req, onClear 
         <span className="block truncate font-medium" title={file || undefined}>{file ? shortName(file) : title}{!file && req && <span className="text-destructive"> *</span>}</span>
         <span className="block text-xs text-muted-foreground">{file ? "Click to choose a different file" : hint}</span>
       </span>
-      {file && onClear && <span role="button" aria-label="Clear" onClick={(e) => { e.preventDefault(); setFile(""); onClear(); }} className="shrink-0 rounded-full bg-background p-1.5 text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></span>}
-      <input type="file" name={name} accept={accept} className="hidden" onChange={(e) => setFile(e.target.files?.[0]?.name ?? "")} />
+      {file && onClear && <span role="button" aria-label="Clear" onClick={(e) => { e.preventDefault(); if (input.current) input.current.value = ""; setFile(""); onClear(); }} className="shrink-0 rounded-full bg-background p-1.5 text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></span>}
+      <input ref={input} type="file" name={name} accept={accept} className="hidden" onChange={(e) => setFile(e.target.files?.[0]?.name ?? "")} />
     </label>
   );
 }

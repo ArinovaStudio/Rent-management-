@@ -1,5 +1,6 @@
 "use client";
 import { useState, Suspense } from "react";
+import PasswordInput from "@/components/PasswordInput";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -40,11 +41,11 @@ function LoginForm() {
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <label className="grid gap-1.5 text-sm">
               Email
-              <input className="field" name="email" type="email" required autoComplete="email" />
+              <input className="field" name="email" type="email" required autoComplete="email" placeholder="e.g. rahul@example.com" />
             </label>
             <label className="grid gap-1.5 text-sm">
               Password
-              <input className="field" name="password" type="password" required autoComplete="current-password" />
+              <PasswordInput className="field" name="password" required autoComplete="current-password" placeholder="Your password" />
             </label>
             {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
             <button

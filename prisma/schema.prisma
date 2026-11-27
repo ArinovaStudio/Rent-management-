@@ -140,6 +140,9 @@ model OwnerProfile {
   legalName       String // person's legal name, or the registered company name
   phone           String? // E.164, e.g. +919876543210. Null until step 1 is saved (Google sign-ups).
   phoneVerifiedAt DateTime?
+  // Optional extras for co-owners / managers created by an admin. photoPath is relative to /uploads, e.g. images/people/ab12.jpg
+  age       Int?
+  photoPath String?
 
   // Step 2: identity
   idType         IdType?

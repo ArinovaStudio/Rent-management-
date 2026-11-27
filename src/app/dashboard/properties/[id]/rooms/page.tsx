@@ -4,7 +4,7 @@ import { ArrowLeft, Building2, BedDouble, ChevronDown, Users, Wallet } from "luc
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/current-user";
 import { canOperateProperty } from "@/lib/property-access";
-import { propertiesBase } from "@/lib/routes";
+import { propertiesBase, propertyHome } from "@/lib/routes";
 import { AdminShell, Panel } from "@/components/admin/AdminShell";
 import AllocationForm, { type FloorSlot } from "./allocation-form";
 import BuildingAllocationForm, { type BuildingFloor } from "./building-allocation-form";
@@ -154,7 +154,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
   return (
     <AdminShell role={me.role} name={name}>
       <div className="mb-8 flex flex-wrap items-center gap-4">
-        <Link href={propertiesBase(me.role)} aria-label="Back" className="flex h-11 w-11 items-center justify-center rounded-full bg-background hover:bg-cream"><ArrowLeft className="h-5 w-5" /></Link>
+        <Link href={propertyHome(me.role, property.id)} aria-label="Back" className="flex h-11 w-11 items-center justify-center rounded-full bg-background hover:bg-cream"><ArrowLeft className="h-5 w-5" /></Link>
         <div className="min-w-0 flex-1">
           <h1 className="text-4xl font-medium tracking-tight">{property.name}</h1>
           <p className="text-muted-foreground">{isBuilding ? "Flat status & tenant allocation" : byCategory ? "Room status & tenant allocation" : "Flat status & tenant"}</p>

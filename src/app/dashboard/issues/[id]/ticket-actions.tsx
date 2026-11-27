@@ -45,7 +45,7 @@ export default function TicketActions({ issueId, status, canUpdate, canEscalate 
     <div className="space-y-6">
       <div className="space-y-3">
         <h3 className="font-medium">Add a reply</h3>
-        <textarea className="field" rows={3} maxLength={2000} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a message on this ticket" />
+        <textarea className="field w-full" rows={3} maxLength={2000} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a message on this ticket" />
         <button type="button" className={primary} disabled={busy !== "" || !reply.trim()} onClick={async () => { if (await call("reply", `/api/issues/${issueId}/replies`, "POST", { message: reply }, "Reply sent")) setReply(""); }}>
           {spin("reply")}{busy === "reply" ? "Sending…" : "Send reply"}
         </button>
@@ -54,14 +54,14 @@ export default function TicketActions({ issueId, status, canUpdate, canEscalate 
       {canUpdate && (
         <div className="space-y-3 border-t border-cream pt-5">
           <h3 className="font-medium">Update status</h3>
-          <div className="grid gap-3 sm:grid-cols-[12rem_1fr]">
-            <select className="field" value={s} onChange={(e) => setS(e.target.value)}>
+          <div className="grid gap-3">
+            <select className="field w-full" value={s} onChange={(e) => setS(e.target.value)}>
               <option value="OPEN">Open</option>
               <option value="IN_PROGRESS">In progress</option>
               <option value="RESOLVED">Resolved</option>
               <option value="CLOSED">Closed</option>
             </select>
-            <textarea className="field" rows={2} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note for the manager (optional)" />
+            <textarea className="field w-full" rows={3} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note for the manager (optional)" />
           </div>
           <button type="button" className={primary} disabled={busy !== "" || (s === status && !note.trim())}
             onClick={async () => { if (await call("status", `/api/issues/${issueId}`, "PATCH", { status: s, resolutionNote: note }, "Ticket updated")) setNote(""); }}>
@@ -77,7 +77,7 @@ export default function TicketActions({ issueId, status, canUpdate, canEscalate 
             <button type="button" className={soft} onClick={() => setAskEscalate(true)}><ArrowUpRight className="h-4 w-4" />Escalate to Super Admin</button>
           ) : (
             <>
-              <textarea className="field" rows={2} maxLength={2000} value={escNote} onChange={(e) => setEscNote(e.target.value)} placeholder="Why are you escalating? (optional)" />
+              <textarea className="field w-full" rows={3} maxLength={2000} value={escNote} onChange={(e) => setEscNote(e.target.value)} placeholder="Why are you escalating? (optional)" />
               <div className="flex flex-wrap gap-2">
                 <button type="button" className={primary} disabled={busy !== ""} onClick={() => call("escalate", `/api/issues/${issueId}/escalate`, "POST", { note: escNote }, "Escalated to Super Admin")}>
                   {spin("escalate")}{busy === "escalate" ? "Escalating…" : "Confirm escalate"}

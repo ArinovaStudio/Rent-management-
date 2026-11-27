@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 import { occupancy } from "@/lib/occupancy";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -142,3 +143,6 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
     </AdminShell>
   );
 }
+=======
+export { default } from "@/app/dashboard/properties/page";
+>>>>>>> Stashed changes

@@ -4,7 +4,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/current-user";
 import { canOperateProperty } from "@/lib/property-access";
-import { propertiesBase } from "@/lib/routes";
+import { propertiesBase, propertyHome } from "@/lib/routes";
 import { AdminShell, Panel } from "@/components/admin/AdminShell";
 import { monthLabel } from "@/lib/bills";
 import { withTax } from "@/lib/invoice";
@@ -57,7 +57,7 @@ export default async function PaymentLedgerPage({ params, searchParams }: { para
   return (
     <AdminShell role={me.role} name={me.name ?? "Account"}>
       <div className="mb-8 flex flex-wrap items-center gap-4">
-        <Link href={propertiesBase(me.role)} aria-label="Back" className={navBtn}><ArrowLeft className="h-5 w-5" /></Link>
+        <Link href={propertyHome(me.role, property.id)} aria-label="Back" className={navBtn}><ArrowLeft className="h-5 w-5" /></Link>
         <div className="min-w-0 flex-1">
           <h1 className="text-4xl font-medium tracking-tight">{property.name}</h1>
           <p className="text-muted-foreground">Payment ledger · who has paid rent and bills</p>

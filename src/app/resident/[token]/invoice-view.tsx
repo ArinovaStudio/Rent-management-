@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useRef, useState } from "react";
+import BrandMark from "@/components/BrandMark";
 import { createPortal } from "react-dom";
 import { ArrowLeft, Banknote, Check, CreditCard, Download, Landmark, Pencil, QrCode, Receipt, Send, Smartphone, Users, X } from "lucide-react";
 import { qrModules } from "@/lib/qr";
@@ -235,6 +236,7 @@ export default function InvoiceView({ invoice: base, draft, taxEdit }: { invoice
       {/* ================= Invoice (left) ================= */}
       <div className="w-full flex-[2] lg:max-w-3xl print:max-w-none">
         <div className="rounded-[1.75rem] bg-white p-6 shadow-sm md:p-10 print:rounded-none print:p-0 print:shadow-none">
+          <BrandMark className="mb-6 border-b border-gray-100 pb-5" />
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-0.5 text-[13px] text-gray-700">
               <p className="text-base font-semibold text-gray-900">{invoice.from.name}</p>
