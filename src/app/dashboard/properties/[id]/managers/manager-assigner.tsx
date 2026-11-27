@@ -70,52 +70,6 @@ export default function ManagerAssigner({ propertyId, owners, managers, canAdd }
     refresh();
   }
 
-<<<<<<< Updated upstream
-  return (
-    <div className="space-y-6">
-      <Panel>
-        <h2 className="mb-4 text-xl font-semibold">Assign a manager</h2>
-        {candidates.length === 0 ? (
-          <p className="text-muted-foreground">No verified, unassigned managers available.</p>
-        ) : (
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex min-w-[16rem] flex-1 flex-col gap-2 text-sm">
-              <span className="font-medium">Manager</span>
-              <select className="field" value={managerId || candidates[0].id} onChange={(e) => setManagerId(e.target.value)}>
-                {candidates.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.email})</option>)}
-              </select>
-            </label>
-            <button type="button" disabled={busy} onClick={() => call("POST", managerId || candidates[0].id)} className="rounded-full bg-primary px-6 py-3 text-primary-foreground hover:bg-ink disabled:opacity-60">
-              Assign
-            </button>
-          </div>
-        )}
-        {error && <p role="alert" className="mt-4 rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">{error}</p>}
-      </Panel>
-
-      <Panel>
-        <h2 className="mb-4 text-xl font-semibold">Assigned managers</h2>
-        {assigned.length === 0 ? (
-          <p className="text-muted-foreground">No manager assigned yet.</p>
-        ) : (
-          <ul className="divide-y divide-cream">
-            {assigned.map((m) => (
-              <li key={m.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{m.name}</p>
-                  <p className="truncate text-sm text-muted-foreground">{m.email}</p>
-                </div>
-                <button type="button" disabled={busy} onClick={() => call("DELETE", m.id)} className="rounded-full bg-cream px-5 py-2 text-sm hover:bg-cream/70 disabled:opacity-60">
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
-
-
-=======
   const remove = (p: Person) => {
     if (p.kind === "coOwner" && !window.confirm("Remove this co-owner? Their uploaded proof documents will be deleted.")) return;
     call(p.kind === "coOwner" ? "coOwner" : "manager", "DELETE", p.id);
@@ -171,7 +125,6 @@ export default function ManagerAssigner({ propertyId, owners, managers, canAdd }
         />
       )}
       {edit && <PersonEditDialog propertyId={propertyId} person={edit} onClose={() => setEdit(null)} onSaved={refresh} />}
->>>>>>> Stashed changes
     </div>
   );
 }
