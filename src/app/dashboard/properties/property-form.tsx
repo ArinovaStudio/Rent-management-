@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSoftRefresh } from "@/lib/use-soft-refresh";
@@ -73,6 +73,30 @@ export default function PropertyForm({ initial, owners, role, listedBy, property
   coOwners?: { userId: string; name: string; email: string; documents: number }[];
   managers?: { id: string; name: string; email: string }[];
 }) {
+  const [activeSection, setActiveSection] = useState("photos");
+
+  useEffect(() => {
+    const initialId = window.location.hash.slice(1);
+    const validIds = NAV.map(([, id]) => id);
+    const current = validIds.includes(initialId as (typeof NAV)[number][1]) ? initialId : "photos";
+    setActiveSection(current);
+    if (!initialId || !validIds.includes(initialId as (typeof NAV)[number][1])) {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#photos`);
+    }
+
+    const sections = NAV.map(([, id]) => document.getElementById(id)).filter((section): section is HTMLElement => section !== null);
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+      if (!visible.length) return;
+      const id = visible[0].target.id;
+      setActiveSection(id);
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${id}`);
+    }, { rootMargin: "-15% 0px -70% 0px", threshold: 0 });
+
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, []);
+
   const router = useRouter();
   const refresh = useSoftRefresh();
   const editing = !!initial;
@@ -390,7 +414,17 @@ export default function PropertyForm({ initial, owners, role, listedBy, property
       <div className="grid gap-6 xl:grid-cols-[200px_1fr_340px]">
         <nav className="hidden xl:block">
           <ul className="sticky top-24 space-y-1">
-            {NAV.map(([t, id]) => <li key={id}><a href={`#${id}`} className="block rounded-full px-4 py-2 text-sm text-muted-foreground hover:bg-background hover:text-foreground">{t}</a></li>)}
+            {NAV.map(([t, id]) => (
+              <li key={id}>
+                <a
+                  href={`#${id}`}
+                  aria-current={activeSection === id ? "location" : undefined}
+                  className={`block rounded-full px-4 py-2 text-sm transition-colors ${activeSection === id ? "bg-primary/10 font-medium text-primary ring-1 ring-primary/20" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}
+                >
+                  {t}
+                </a>
+              </li>
+            ))}
           </ul>
         </nav>
 
