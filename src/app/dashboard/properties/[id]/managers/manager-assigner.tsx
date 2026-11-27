@@ -30,6 +30,26 @@ export default function ManagerAssigner({ propertyId, assigned, candidates }: { 
   return (
     <div className="space-y-6">
       <Panel>
+        <h2 className="mb-4 text-xl font-semibold">Assign a manager</h2>
+        {candidates.length === 0 ? (
+          <p className="text-muted-foreground">No verified, unassigned managers available.</p>
+        ) : (
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex min-w-[16rem] flex-1 flex-col gap-2 text-sm">
+              <span className="font-medium">Manager</span>
+              <select className="field" value={managerId || candidates[0].id} onChange={(e) => setManagerId(e.target.value)}>
+                {candidates.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.email})</option>)}
+              </select>
+            </label>
+            <button type="button" disabled={busy} onClick={() => call("POST", managerId || candidates[0].id)} className="rounded-full bg-primary px-6 py-3 text-primary-foreground hover:bg-ink disabled:opacity-60">
+              Assign
+            </button>
+          </div>
+        )}
+        {error && <p role="alert" className="mt-4 rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">{error}</p>}
+      </Panel>
+
+      <Panel>
         <h2 className="mb-4 text-xl font-semibold">Assigned managers</h2>
         {assigned.length === 0 ? (
           <p className="text-muted-foreground">No manager assigned yet.</p>
@@ -50,25 +70,7 @@ export default function ManagerAssigner({ propertyId, assigned, candidates }: { 
         )}
       </Panel>
 
-      <Panel>
-        <h2 className="mb-4 text-xl font-semibold">Assign a manager</h2>
-        {candidates.length === 0 ? (
-          <p className="text-muted-foreground">No verified, unassigned managers available.</p>
-        ) : (
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex min-w-[16rem] flex-1 flex-col gap-2 text-sm">
-              <span className="font-medium">Manager</span>
-              <select className="field" value={managerId || candidates[0].id} onChange={(e) => setManagerId(e.target.value)}>
-                {candidates.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.email})</option>)}
-              </select>
-            </label>
-            <button type="button" disabled={busy} onClick={() => call("POST", managerId || candidates[0].id)} className="rounded-full bg-primary px-6 py-3 text-primary-foreground hover:bg-ink disabled:opacity-60">
-              Assign
-            </button>
-          </div>
-        )}
-        {error && <p role="alert" className="mt-4 rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">{error}</p>}
-      </Panel>
+
     </div>
   );
 }

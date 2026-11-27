@@ -10,6 +10,7 @@ import { AdminShell, PageHeader, Panel } from "@/components/admin/AdminShell";
 import { Chip, toneFor } from "@/app/admin/ui";
 import ActiveToggle from "@/components/admin/ActiveToggle";
 import DeletePropertyButton from "@/components/admin/DeletePropertyButton";
+import PropertyActionLink from "../property-action-link";
 
 const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment", BUILDING: "Building" } as const;
 const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Live", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
@@ -84,10 +85,10 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
 
       {/* Every action */}
       <div className="mb-6 flex flex-wrap gap-2">
-        <Link className={btn} href={`${base}/rooms`}>Room status &amp; allocations</Link>
-        <Link className={btn} href={`${base}/ledger`}>Payment ledger</Link>
-        <Link className={btn} href={`${base}/edit`}>Edit</Link>
-        <Link className={btn} href={`${base}/managers`}>Managers</Link>
+        <PropertyActionLink className={btn} href={`${base}/rooms`}>Room status &amp; allocations</PropertyActionLink>
+        <PropertyActionLink className={btn} href={`${base}/ledger`}>Payment ledger</PropertyActionLink>
+        <PropertyActionLink className={btn} href={`${base}/edit`}>Edit</PropertyActionLink>
+        <PropertyActionLink className={btn} href={`${base}/managers`}>Managers</PropertyActionLink>
         {p.mapUrl && <a className={btn} href={p.mapUrl} target="_blank" rel="noreferrer">View on map</a>}
         <DeletePropertyButton propertyId={p.id} propertyName={p.name} />
       </div>

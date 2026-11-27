@@ -12,6 +12,7 @@ import { Chip, toneFor } from "@/app/admin/ui";
 import ActiveToggle from "@/components/admin/ActiveToggle";
 import PropertyFilterBar from "@/components/admin/PropertyFilterBar";
 import { ACTIVE_OPTIONS, STATUS_OPTIONS, TYPE_OPTIONS, applyPropertyFilters, hasFilters } from "@/lib/property-filter";
+import { PropertyOpenLink } from "./property-open-link";
 
 const TYPE_LABEL = { PG: "PG", APARTMENT: "Flat / Apartment", FLAT: "Flat / Apartment", BUILDING: "Building" } as const;
 const STATUS_LABEL = { PENDING: "Pending review", APPROVED: "Approved", REJECTED: "Rejected", NEEDS_MORE_INFO: "More information needed" } as const;
@@ -101,7 +102,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
             return (
               <div key={p.id} className="group relative flex flex-col rounded-[1.75rem] bg-background p-4 shadow-[0_8px_30px_rgba(0,0,0,0.06)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(0,0,0,0.12)] motion-reduce:transition-none motion-reduce:hover:translate-y-0">
                 {/* Whole card opens the property page. Toggle and button sit above it. */}
-                <Link href={`${base}/${p.id}`} aria-label={`Open ${p.name}`} className="absolute inset-0 z-0 rounded-[1.75rem]" />
+                <PropertyOpenLink href={`${base}/${p.id}`} name={p.name} card className="absolute inset-0 z-0 rounded-[1.75rem]" />
 
                 <div className="pointer-events-none relative h-44 overflow-hidden rounded-2xl bg-cream">
                   {cover ? (
@@ -131,7 +132,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
 
                 <div className="relative z-10 mt-4 flex items-center justify-between gap-3">
                   <ActiveToggle propertyId={p.id} active={p.isActive} />
-                  <Link href={`${base}/${p.id}`} className="rounded-full bg-ink px-6 py-2.5 text-sm font-medium text-ink-foreground transition-colors hover:bg-primary">Open</Link>
+                  <PropertyOpenLink href={`${base}/${p.id}`} name={p.name} className="flex items-center gap-2 rounded-full bg-ink px-6 py-2.5 text-sm font-medium text-ink-foreground transition-colors hover:bg-primary" />
                 </div>
               </div>
             );

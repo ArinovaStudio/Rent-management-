@@ -138,11 +138,20 @@ export function TagPicker({ presets, value, onChange, label, charges, onChargeCh
     );
   };
   const [custom, setCustom] = useState("");
-  const customs = value.filter((v) => !presets.includes(v));
+  const [customOptions, setCustomOptions] = useState(() => value.filter((v) => !presets.includes(v)));
+  const customs = customOptions;
   const toggle = (v: string) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
   const add = () => {
     const v = custom.trim().slice(0, 40);
-    if (v && !value.some((x) => x.toLowerCase() === v.toLowerCase())) onChange([...value, v]);
+    if (v) {
+      const existing = [...presets, ...customOptions].find((x) => x.toLowerCase() === v.toLowerCase());
+      if (existing) {
+        if (!value.includes(existing)) onChange([...value, existing]);
+      } else {
+        setCustomOptions((options) => [...options, v]);
+        onChange([...value, v]);
+      }
+    }
     setCustom("");
   };
   return (
@@ -159,23 +168,26 @@ export function TagPicker({ presets, value, onChange, label, charges, onChargeCh
           const on = value.includes(v);
           return (
             <div key={v} className="grid min-w-0 content-start gap-1.5">
-              <button type="button" aria-pressed={on} onClick={() => toggle(v)} className={`flex min-w-0 items-center gap-2 rounded-2xl border px-3 py-2.5 text-left text-sm transition-colors ${on ? "border-primary bg-primary/5 font-medium text-primary" : "border-transparent bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${on ? "bg-primary text-primary-foreground" : "bg-cream"}`}>{on && <Check className="h-3 w-3" />}</span>
+              <button type="button" aria-pressed={on} aria-label={`${on ? "Deselect" : "Select"} ${v}`} onClick={() => toggle(v)} className={`flex min-w-0 items-center gap-2 rounded-2xl border px-3 py-2.5 text-left text-sm transition-all duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${on ? "border-primary bg-primary/5 font-medium text-primary" : "border-transparent bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors ${on ? "bg-primary text-primary-foreground" : "bg-cream"}`}>{on && <Check className="h-3 w-3" />}</span>
                 <span className="truncate">{v}</span>
               </button>
               {on && charge(v)}
             </div>
           );
         })}
-        {customs.map((v) => (
-          <div key={v} className="grid min-w-0 content-start gap-1.5">
-            <span className="flex min-w-0 items-center gap-2 rounded-2xl border border-primary bg-primary/5 px-3 py-2.5 text-sm font-medium text-primary">
-              <span className="truncate">{v}</span>
-              <button type="button" aria-label={`Remove ${v}`} onClick={() => toggle(v)} className="ml-auto shrink-0"><X className="h-3.5 w-3.5" /></button>
-            </span>
-            {charge(v)}
-          </div>
-        ))}
+        {customs.map((v) => {
+          const on = value.includes(v);
+          return (
+            <div key={v} className="grid min-w-0 content-start gap-1.5">
+              <button type="button" aria-pressed={on} aria-label={`${on ? "Deselect" : "Select"} ${v}`} onClick={() => toggle(v)} className={`flex min-w-0 items-center gap-2 rounded-2xl border px-3 py-2.5 text-left text-sm transition-all duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${on ? "border-primary bg-primary/5 font-medium text-primary" : "border-transparent bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors ${on ? "bg-primary text-primary-foreground" : "bg-cream"}`}>{on && <Check className="h-3 w-3" />}</span>
+                <span className="truncate">{v}</span>
+              </button>
+              {on && charge(v)}
+            </div>
+          );
+        })}
       </div>
       <div className="mt-3 flex min-w-0 gap-2">
         <input className="field min-w-0 !bg-background" value={custom} maxLength={40} placeholder="Add your own and press Enter" onChange={(e) => setCustom(e.target.value)}
