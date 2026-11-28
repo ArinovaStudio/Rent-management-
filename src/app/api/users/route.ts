@@ -1,3 +1,4 @@
+import { parseExperience } from "@/lib/experience";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
@@ -36,6 +37,8 @@ export async function POST(req: Request) {
     const u = fd.get(field);
     return u instanceof File && u.size > 0 ? u : null;
   };
+  const exp = parseExperience(fd);
+  if (Object.keys(exp.errors).length) return bad(exp.errors);
   const idFile = pick("document");
   const fileErrors: Record<string, string> = {};
   if (!idFile) fileErrors.document = "Upload a photo or PDF of the person's ID.";
@@ -63,7 +66,7 @@ export async function POST(req: Request) {
           create: {
             accountType: "INDIVIDUAL",
             legalName: name,
-            phone, age, photoPath,
+            phone, age, photoPath, appointedAt: exp.appointedAt, pastExperienceMonths: exp.pastMonths,
             idType: d.idType,
             idNumberMasked: maskIdNumber(d.idNumber!), // required by validateStep2 here, so never null
             addressLine1: d.addressLine1, addressLine2: d.addressLine2,

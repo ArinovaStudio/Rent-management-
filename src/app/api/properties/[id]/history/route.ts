@@ -6,8 +6,7 @@ import { canOperateProperty } from "@/lib/property-access";
 const PAGE_SIZE = 10;
 const fmt = (d: Date) => d.toLocaleDateString("en-IN");
 
-// Tenant history of a building, one floor and one page of 10 at a time.
-// Floor tabs and counts come from one GROUP BY; only the 10 visible rows are loaded.
+// Tenant history of a building: one floor (and optionally one flat) and one page of 10 at a time.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
@@ -18,25 +17,28 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const url = new URL(req.url);
   const base = { status: "CHECKED_OUT" as const, room: { propertyId: id } };
 
-  const groups = await prisma.allocation.groupBy({ by: ["floorNumber"], where: base, _count: { _all: true } });
-  const counts = new Map<number, number>();
-  for (const g of groups) counts.set(g.floorNumber ?? 0, (counts.get(g.floorNumber ?? 0) ?? 0) + g._count._all);
-  const floors = [...counts.entries()].map(([floor, count]) => ({ floor, count })).sort((a, b) => a.floor - b.floor);
+  // One floor at a time; optionally one flat of that floor (roomId). Flat tab counts come from one GROUP BY.
+  const asked = Number(url.searchParams.get("floor"));
+  const floor = Number.isFinite(asked) ? asked : 0;
+  const floorWhere = floor === 0 ? { OR: [{ floorNumber: null }, { floorNumber: 0 }] } : { floorNumber: floor };
+  const groups = await prisma.allocation.groupBy({ by: ["roomId"], where: { ...base, ...floorWhere }, _count: { _all: true } });
+  const flatCounts: Record<string, number> = {};
+  let floorTotal = 0;
+  for (const g of groups) { flatCounts[g.roomId] = g._count._all; floorTotal += g._count._all; }
 
-  const asked = url.searchParams.get("floor");
-  const floor = asked !== null && counts.has(Number(asked)) ? Number(asked) : floors[0]?.floor ?? 0;
-  const total = counts.get(floor) ?? 0;
+  const roomId = url.searchParams.get("roomId");
+  const total = roomId ? flatCounts[roomId] ?? 0 : floorTotal;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const page = Math.min(Math.max(1, Math.floor(Number(url.searchParams.get("page"))) || 1), pages);
 
   const past = total === 0 ? [] : await prisma.allocation.findMany({
-    where: { ...base, ...(floor === 0 ? { OR: [{ floorNumber: null }, { floorNumber: 0 }] } : { floorNumber: floor }) },
+    where: { ...base, ...floorWhere, ...(roomId ? { roomId } : {}) },
     select: {
       id: true, roomId: true, fullName: true, phone: true, email: true, isHousemate: true,
       floorNumber: true, roomLabel: true, roomBhk: true, monthlyRent: true, securityDeposit: true,
       moveInDate: true, moveOutDate: true, updatedAt: true,
       room: { select: { label: true, floor: true, bedrooms: true } },
-      _count: { select: { documents: true } },
+      documents: { select: { id: true }, orderBy: { createdAt: "asc" }, take: 8 },
     },
     orderBy: [{ moveOutDate: "desc" }, { updatedAt: "desc" }],
     skip: (page - 1) * PAGE_SIZE,
@@ -58,11 +60,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return b.roomId === a.roomId && b.moveInDate <= out && (end === null || end >= a.moveInDate);
     }).length;
     return {
-      id: a.id, name: a.fullName, phone: a.phone, email: a.email, role: a.isHousemate ? "Housemate" : "Main tenant",
-      floor: a.floorNumber ?? a.room.floor ?? 0, flat: a.roomLabel ?? a.room.label, bhk: a.roomBhk ?? a.room.bedrooms,
-      people, rent: a.monthlyRent, deposit: a.securityDeposit, moveIn: fmt(a.moveInDate), moveOut: fmt(out), docs: a._count.documents,
+      id: a.id, name: a.fullName, phone: a.phone, email: a.email, role: a.isHousemate ? "Sharing flat" : "Main tenant",
+      floor: a.floorNumber ?? a.room.floor ?? 0, flat: (a.roomLabel ?? a.room.label).replace(/^flat\s+/i, ""), bhk: a.roomBhk ?? a.room.bedrooms,
+      people, rent: a.monthlyRent, deposit: a.securityDeposit, moveIn: fmt(a.moveInDate), moveOut: fmt(out), docIds: a.documents.map((d) => d.id),
     };
   });
 
-  return NextResponse.json({ floors, floor, page, pages, total, pageSize: PAGE_SIZE, rows });
+  return NextResponse.json({ floor, flatCounts, floorTotal, page, pages, total, pageSize: PAGE_SIZE, rows });
 }

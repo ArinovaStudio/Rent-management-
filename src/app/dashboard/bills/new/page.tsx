@@ -55,7 +55,13 @@ export default async function NewBillPage({ searchParams }: { searchParams: Prom
     backLabel: "Back to rooms",
     payee: { upiId: "", name: property.name, demo: false },
   };
-  const draft: DraftBill = { allocationId: a.id, type, category, initialPeriod, minPeriod, maxPeriod };
+  // Bills of this type that already exist: a month that has one can only be edited, not generated again
+  const old = await prisma.residentBill.findMany({ where: { allocationId: a.id, type }, select: { id: true, period: true, amount: true, taxPct: true, note: true, paid: true }, take: 120 });
+  const existing = old.map((o) => {
+    const m = /^([\d.]+) (?:units|kL) × ₹([\d,.]+)$/.exec(o.note ?? "");
+    return { id: o.id, period: o.period, paid: o.paid, taxPct: o.taxPct, units: m ? m[1] : "", rate: m ? m[2].replace(/,/g, "") : "" };
+  });
+  const draft: DraftBill = { allocationId: a.id, type, category, initialPeriod, minPeriod, maxPeriod, existing };
 
   return (
     <div className="tw min-h-screen bg-cream/60 text-foreground">

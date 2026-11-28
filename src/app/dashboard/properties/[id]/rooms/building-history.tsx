@@ -6,22 +6,22 @@ import { authFetch } from "@/lib/fetch-auth";
 
 export type HistoryRow = {
   id: string; name: string; phone: string; email: string | null; role: string; floor: number; flat: string; bhk: number | null;
-  people: number; rent: number; deposit: number; moveIn: string; moveOut: string; docs: number;
+  people: number; rent: number; deposit: number; moveIn: string; moveOut: string; docIds: string[];
 };
-type Page = { floors: { floor: number; count: number }[]; floor: number; page: number; pages: number; total: number; pageSize: number; rows: HistoryRow[] };
+type Page = { floor: number; flatCounts: Record<string, number>; floorTotal: number; page: number; pages: number; total: number; pageSize: number; rows: HistoryRow[] };
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 
-// Past tenants of the building: button + popup, one tab per floor. Nothing is loaded until the popup opens,
-// and then only one floor / one page of 10 rows at a time. Rent, flat and floor are the values saved when the
-// person lived there, so later changes to the flat never alter this list.
-export default function BuildingHistory({ propertyId, count }: { propertyId: string; count: number }) {
+// Past tenants of ONE floor (the floor selected in the residents table): button + popup, one tab per flat.
+// Nothing is loaded until the popup opens, then only one flat / one page of 10 rows at a time. Rent, flat and
+// floor are the values saved when the person lived there, so later changes to the flat never alter this list.
+export default function BuildingHistory({ propertyId, count, floor, flats }: { propertyId: string; count: number; floor: number; flats: { id: string; label: string }[] }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<Page | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [want, setWant] = useState<{ floor: number | null; page: number }>({ floor: null, page: 1 });
+  const [want, setWant] = useState<{ roomId: string | null; page: number }>({ roomId: null, page: 1 });
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -29,8 +29,8 @@ export default function BuildingHistory({ propertyId, count }: { propertyId: str
     let stale = false;
     setLoading(true);
     setError("");
-    const q = new URLSearchParams({ page: String(want.page) });
-    if (want.floor !== null) q.set("floor", String(want.floor));
+    const q = new URLSearchParams({ page: String(want.page), floor: String(floor) });
+    if (want.roomId) q.set("roomId", want.roomId);
     authFetch(`/api/properties/${propertyId}/history?${q}`)
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
@@ -41,7 +41,7 @@ export default function BuildingHistory({ propertyId, count }: { propertyId: str
       .catch(() => !stale && setError("Could not load the history."))
       .finally(() => !stale && setLoading(false));
     return () => { stale = true; };
-  }, [open, want, propertyId]);
+  }, [open, want, propertyId, floor]);
 
   useEffect(() => {
     if (!open) return;
@@ -63,7 +63,7 @@ export default function BuildingHistory({ propertyId, count }: { propertyId: str
         <div className="flex items-start justify-between gap-4 border-b border-cream p-5">
           <div>
             <h3 className="text-xl font-medium">Tenant history</h3>
-            <p className="text-sm text-muted-foreground">Past tenants and housemates, floor by floor. Rent and flat are as they were when the person lived here.</p>
+            <p className="text-sm text-muted-foreground">Floor {floor}: past tenants and housemates, flat by flat. Rent and flat are as they were when the person lived here.</p>
           </div>
           <button type="button" onClick={() => setOpen(false)} aria-label="Close"><X className="h-5 w-5" /></button>
         </div>
@@ -75,23 +75,26 @@ export default function BuildingHistory({ propertyId, count }: { propertyId: str
               {[0, 1, 2, 3].map((i) => <div key={i} className="h-12 w-full animate-pulse rounded-2xl bg-cream" />)}
             </div>
           )}
-          {data && data.floors.length === 0 && <p className="text-sm text-muted-foreground">No past tenants yet.</p>}
-          {data && data.floors.length > 0 && (
+          {data && (
             <>
               <div className="flex flex-wrap gap-2">
-                {data.floors.map((f) => (
-                  <button key={f.floor} type="button" onClick={() => setWant({ floor: f.floor, page: 1 })} className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm ${data.floor === f.floor ? "bg-primary text-primary-foreground" : "bg-cream"}`}>
-                    Floor {f.floor}
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${data.floor === f.floor ? "bg-primary-foreground/20" : "bg-background"}`}>{f.count}</span>
-                  </button>
-                ))}
+                {[{ id: null as string | null, label: "All flats", n: data.floorTotal }, ...flats.map((f) => ({ id: f.id as string | null, label: f.label, n: data.flatCounts[f.id] ?? 0 }))].map((t) => {
+                  const on = want.roomId === t.id;
+                  return (
+                    <button key={t.id ?? "all"} type="button" onClick={() => setWant({ roomId: t.id, page: 1 })} className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm ${on ? "bg-primary text-primary-foreground" : "bg-cream"}`}>
+                      {t.label}
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] ${on ? "bg-primary-foreground/20" : "bg-background"}`}>{t.n}</span>
+                    </button>
+                  );
+                })}
                 {loading && <Loader2 className="ml-1 h-5 w-5 animate-spin self-center text-muted-foreground" />}
               </div>
+              {data.total === 0 ? <p className="mt-4 text-sm text-muted-foreground">No past tenants {want.roomId ? "in this flat" : `on floor ${floor}`} yet.</p> : <>
               <div className={`mt-4 overflow-x-auto rounded-2xl bg-cream/40 ${loading ? "opacity-60" : ""}`}>
                 <table className="w-full min-w-[980px] text-left text-sm">
                   <thead>
                     <tr className="text-muted-foreground">
-                      {["Tenant", "Role", "Contact", "Floor", "Flat", "Living", "Rent / month", "Deposit", "Move-in", "Move-out", "Docs"].map((h) => <th key={h} className="px-4 py-3 font-medium">{h}</th>)}
+                      {["Tenant", "Role", "Contact", "Floor", "Flat", "Living", "Rent / month", "Deposit", "Move-in", "Move-out", "ID proof"].map((h) => <th key={h} className="px-4 py-3 font-medium">{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -103,11 +106,15 @@ export default function BuildingHistory({ propertyId, count }: { propertyId: str
                         <td className="px-4 py-3">{r.floor}</td>
                         <td className="px-4 py-3">{r.flat}{r.bhk ? <span className="block text-xs text-muted-foreground">{r.bhk} BHK</span> : null}</td>
                         <td className="px-4 py-3">{r.people} {r.people === 1 ? "person" : "people"}</td>
-                        <td className="px-4 py-3">{r.role === "Housemate" ? <span className="text-muted-foreground">Covered by main tenant</span> : inr(r.rent)}</td>
-                        <td className="px-4 py-3">{r.role === "Housemate" ? "—" : inr(r.deposit)}</td>
+                        <td className="px-4 py-3">{r.role !== "Main tenant" ? <span className="text-muted-foreground">Covered by main tenant</span> : inr(r.rent)}</td>
+                        <td className="px-4 py-3">{r.role !== "Main tenant" ? "—" : inr(r.deposit)}</td>
                         <td className="px-4 py-3">{r.moveIn}</td>
                         <td className="px-4 py-3">{r.moveOut}</td>
-                        <td className="px-4 py-3">{r.docs}</td>
+                        <td className="px-4 py-3">
+                          {r.docIds.length === 0 ? "—" : r.docIds.map((d, i) => (
+                            <a key={d} href={`/api/properties/${propertyId}/documents/${d}`} target="_blank" rel="noopener noreferrer" className="mr-2 inline-block rounded-full bg-cream px-3 py-1 text-xs hover:bg-cream/70">{r.docIds.length > 1 ? `View ${i + 1}` : "View"}</a>
+                          ))}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -117,12 +124,13 @@ export default function BuildingHistory({ propertyId, count }: { propertyId: str
                 <span>Showing {(cur - 1) * PAGE_SIZE + 1}–{Math.min(cur * PAGE_SIZE, data.total)} of {data.total}</span>
                 {pages > 1 && (
                   <div className="flex items-center gap-2">
-                    <button type="button" aria-label="Previous page" disabled={cur === 1 || loading} onClick={() => setWant({ floor: data.floor, page: cur - 1 })} className="flex h-9 w-9 items-center justify-center rounded-full bg-cream disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
+                    <button type="button" aria-label="Previous page" disabled={cur === 1 || loading} onClick={() => setWant({ roomId: want.roomId, page: cur - 1 })} className="flex h-9 w-9 items-center justify-center rounded-full bg-cream disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
                     <span>Page {cur} of {pages}</span>
-                    <button type="button" aria-label="Next page" disabled={cur === pages || loading} onClick={() => setWant({ floor: data.floor, page: cur + 1 })} className="flex h-9 w-9 items-center justify-center rounded-full bg-cream disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button>
+                    <button type="button" aria-label="Next page" disabled={cur === pages || loading} onClick={() => setWant({ roomId: want.roomId, page: cur + 1 })} className="flex h-9 w-9 items-center justify-center rounded-full bg-cream disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button>
                   </div>
                 )}
               </div>
+              </>}
             </>
           )}
         </div>
@@ -132,7 +140,7 @@ export default function BuildingHistory({ propertyId, count }: { propertyId: str
 
   return (
     <>
-      <button type="button" onClick={() => { setWant({ floor: null, page: 1 }); setData(null); setOpen(true); }} className="flex items-center gap-2 rounded-full bg-cream px-5 py-2.5 text-sm hover:bg-cream/70">
+      <button type="button" onClick={() => { setWant({ roomId: null, page: 1 }); setData(null); setOpen(true); }} className="flex items-center gap-2 rounded-full bg-cream px-5 py-2.5 text-sm hover:bg-cream/70">
         <History className="h-4 w-4" />Tenant history{count > 0 && <span className="rounded-full bg-background px-2 py-0.5 text-[11px]">{count}</span>}
       </button>
       {mounted && open && createPortal(modal, document.body)}

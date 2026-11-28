@@ -100,18 +100,27 @@ export default function InvoiceView({ invoice: base, draft, taxEdit }: { invoice
 
   // ---- new bill (draft) inputs ----
   const [period, setPeriod] = useState(draft?.initialPeriod ?? "");
-  const [units, setUnits] = useState("");
-  const [unitRate, setUnitRate] = useState("");
+  // A month that already has a bill of this type opens that bill for editing (units, rate and tax filled in)
+  const ex0 = draft?.existing?.find((e) => e.period === draft.initialPeriod);
+  const [units, setUnits] = useState(ex0?.units ?? "");
+  const [unitRate, setUnitRate] = useState(ex0?.rate ?? "");
+  const [edited, setEdited] = useState(false);
   const [saved, setSaved] = useState<{ id: string } | null>(null);
   const [genBusy, setGenBusy] = useState(false);
   const [genError, setGenError] = useState("");
   const [sendBusy, setSendBusy] = useState(false);
   const [sendMsg, setSendMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // ---- tax edits made on this page, by line key ----
-  const [taxes, setTaxes] = useState<Record<string, number>>({});
+  const [taxes, setTaxes] = useState<Record<string, number>>(ex0 ? { BILL: ex0.taxPct } : {});
   const [taxError, setTaxError] = useState("");
 
   const isElec = draft?.type === "ELECTRICITY";
+  const existing = draft?.existing?.find((e) => e.period === period);
+  function pickPeriod(v: string) {
+    setPeriod(v);
+    const ex = draft?.existing?.find((e) => e.period === v);
+    if (ex) { setUnits(ex.units); setUnitRate(ex.rate); setTaxes((t) => ({ ...t, BILL: ex.taxPct })); }
+  }
   const periodOk = /^\d{4}-(0[1-9]|1[0-2])$/.test(period) && (!draft || (period >= draft.minPeriod && period <= draft.maxPeriod));
   const amount = Math.round(Number(units) * Number(unitRate));
   // sensible limits so a typo can't make a silly bill
@@ -161,16 +170,18 @@ export default function InvoiceView({ invoice: base, draft, taxEdit }: { invoice
     if (!draft) return;
     if (!periodOk) return setGenError(`Choose a month from ${monthLabel(draft.minPeriod)} to ${monthLabel(draft.maxPeriod)}.`);
     if (!ready) return setGenError(`Enter the units (up to ${MAX_UNITS.toLocaleString("en-IN")}) and the rate (up to ₹${MAX_RATE.toLocaleString("en-IN")}).`);
+    if (existing?.paid) return setGenError("This month's bill is already paid, so it can't be edited.");
     setGenBusy(true);
     setGenError("");
-    const res = await authFetch(`/api/allocations/${draft.allocationId}/bills`, {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ type: draft.type, period, amount, taxPct: taxes.BILL ?? 0, note: `${units} ${isElec ? "units" : "kL"} × ${inr(Number(unitRate))}`, paid: false }),
-    });
+    const note = `${units} ${isElec ? "units" : "kL"} × ${inr(Number(unitRate))}`;
+    // Existing bill for this month: edit it (never a second one). Otherwise make a new bill.
+    const res = await authFetch(`/api/allocations/${draft.allocationId}/bills`, existing
+      ? { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ billId: existing.id, amount, taxPct: taxes.BILL ?? 0, note }) }
+      : { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ type: draft.type, period, amount, taxPct: taxes.BILL ?? 0, note, paid: false }) });
     const data = await res.json().catch(() => ({}));
     setGenBusy(false);
     if (!res.ok) return setGenError(data.error ?? "Something went wrong.");
+    setEdited(!!existing);
     setSaved({ id: data.id });
   }
 
@@ -181,7 +192,7 @@ export default function InvoiceView({ invoice: base, draft, taxEdit }: { invoice
     const res = await authFetch(`/api/allocations/${draft.allocationId}/notify`, {
       method: "POST",
       headers: JSON_HEADERS,
-      body: JSON.stringify({ kind: "BILL", billId: saved.id, fresh: true }),
+      body: JSON.stringify(edited ? { kind: "BILL", billId: saved.id, updated: true } : { kind: "BILL", billId: saved.id, fresh: true }),
     });
     const data = await res.json().catch(() => ({}));
     setSendBusy(false);
@@ -270,7 +281,7 @@ export default function InvoiceView({ invoice: base, draft, taxEdit }: { invoice
               <p className="mb-3 text-sm font-semibold text-gray-800">Bill details</p>
               <div className="grid gap-3 sm:grid-cols-3">
                 <label className="grid gap-1 text-xs text-gray-600">Month
-                  <input className={`${fieldCls} bg-white`} type="month" min={draft.minPeriod} max={draft.maxPeriod} value={period} onChange={(e) => setPeriod(e.target.value)} />
+                  <input className={`${fieldCls} bg-white`} type="month" min={draft.minPeriod} max={draft.maxPeriod} value={period} onChange={(e) => pickPeriod(e.target.value)} />
                 </label>
                 <label className="grid gap-1 text-xs text-gray-600">Consumed {unitName}
                   <input className={`${fieldCls} bg-white`} type="number" min={0} max={MAX_UNITS} step="any" inputMode="decimal" value={units} onChange={(e) => setUnits(e.target.value)} />
@@ -280,6 +291,7 @@ export default function InvoiceView({ invoice: base, draft, taxEdit }: { invoice
                 </label>
               </div>
               {period !== "" && !periodOk && <p role="alert" className="mt-2 text-xs text-destructive">Choose a month from {monthLabel(draft.minPeriod)} to {monthLabel(draft.maxPeriod)}.</p>}
+              {existing && <p role="status" className="mt-2 text-xs text-gray-700">{existing.paid ? `The ${BILL_LABEL[draft.type].toLowerCase()} bill for ${monthLabel(period)} is already paid and can't be edited.` : `A ${BILL_LABEL[draft.type].toLowerCase()} bill for ${monthLabel(period)} already exists. You are editing it; the tenant can be told about the update.`}</p>}
             </div>
           )}
 
@@ -349,8 +361,8 @@ export default function InvoiceView({ invoice: base, draft, taxEdit }: { invoice
           {/* New bill: Generate bill, then Send bill (above Download) */}
           {draft && !saved && (
             <div className="space-y-2">
-              <button type="button" disabled={genBusy || !periodOk || !ready} onClick={generate} className="flex w-full items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm text-primary-foreground hover:bg-ink disabled:cursor-not-allowed disabled:opacity-50">
-                <Receipt className="h-4 w-4" />{genBusy ? "Generating…" : "Generate Bill"}
+              <button type="button" disabled={genBusy || !periodOk || !ready || !!existing?.paid} onClick={generate} className="flex w-full items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm text-primary-foreground hover:bg-ink disabled:cursor-not-allowed disabled:opacity-50">
+                <Receipt className="h-4 w-4" />{genBusy ? (existing ? "Updating…" : "Generating…") : existing ? "Update Bill" : "Generate Bill"}
               </button>
               {genError && <p role="alert" className="text-xs text-destructive">{genError}</p>}
               <p className="text-center text-[11px] text-gray-500">Fill in the month, units and rate. The invoice updates as you type.</p>
@@ -358,7 +370,7 @@ export default function InvoiceView({ invoice: base, draft, taxEdit }: { invoice
           )}
           {draft && saved && (
             <div className="rounded-2xl bg-primary/10 px-4 py-3 text-sm">
-              <p className="flex items-center gap-2 font-medium text-primary"><Check className="h-4 w-4" />Bill generated · {money(total)}</p>
+              <p className="flex items-center gap-2 font-medium text-primary"><Check className="h-4 w-4" />{edited ? "Bill updated" : "Bill generated"} · {money(total)}</p>
               <p className="mt-1 text-xs text-gray-600">It is now on the resident&apos;s bill page. Send it to them, or download it.</p>
             </div>
           )}
@@ -499,7 +511,7 @@ export default function InvoiceView({ invoice: base, draft, taxEdit }: { invoice
               {draft && saved && (
                 <>
                   <button type="button" disabled={sendBusy} onClick={sendBill} className="mb-1.5 flex w-full items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm text-primary-foreground hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60">
-                    <Send className="h-4 w-4" />{sendBusy ? "Sending…" : "Send Bill"}
+                    <Send className="h-4 w-4" />{sendBusy ? "Sending…" : edited ? "Send Updated Bill" : "Send Bill"}
                   </button>
                   {sendMsg && <p role="status" className={`mb-1.5 text-center text-xs ${sendMsg.ok ? "text-primary" : "text-destructive"}`}>{sendMsg.text}</p>}
                 </>

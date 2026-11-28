@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { flatNo } from "@/lib/flat";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { prisma } from "@/lib/db";
@@ -45,7 +46,7 @@ export default async function PaymentLedgerPage({ params, searchParams }: { para
       const pay = a.rentPayments[0];
       return {
         id: a.id, name: a.fullName, phone: a.phone, email: a.email,
-        floor: a.floorNumber ?? a.room.floor ?? 0, flat: a.roomLabel ?? a.room.label,
+        floor: a.floorNumber ?? a.room.floor ?? 0, flat: flatNo(a.roomLabel ?? a.room.label),
         rent: a.monthlyRent, rentPaid: !!pay?.paid, rentPaidOn: pay?.paid ? (pay.paidAt ?? pay.updatedAt).toLocaleDateString("en-IN") : null,
         bills: a.bills.map((b) => ({ id: b.id, type: b.type, period: b.period, amount: withTax(b.amount, b.taxPct), paid: b.paid, paidOn: b.paid ? (b.paidAt ?? b.updatedAt).toLocaleDateString("en-IN") : null, note: b.note })),
       };
@@ -69,7 +70,7 @@ export default async function PaymentLedgerPage({ params, searchParams }: { para
         </div>
       </div>
       <Panel>
-        <LedgerTable floors={floors} rows={rows} period={period} />
+        <LedgerTable floors={floors} rows={rows} period={period} propertyId={property.id} />
       </Panel>
     </AdminShell>
   );

@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { Bell, ChevronLeft, ChevronRight, Pencil, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
 import { BILL_LABEL, monthLabel } from "@/lib/bills";
+import PaymentHistory from "./payment-history";
 
 export type LedgerBill = { id: string; type: "ELECTRICITY" | "WATER"; period: string; amount: number; paid: boolean; paidOn: string | null; note: string | null };
 export type LedgerRow = {
@@ -40,7 +41,7 @@ function Modal({ title, sub, onClose, children }: { title: string; sub?: string;
 }
 
 // Rent and bill status of every main tenant, one tab per floor.
-export default function LedgerTable({ floors, rows: serverRows, period }: { floors: number[]; rows: LedgerRow[]; period: string }) {
+export default function LedgerTable({ floors, rows: serverRows, period, propertyId }: { floors: number[]; rows: LedgerRow[]; period: string; propertyId: string }) {
   // Rows live in local state. A status change updates this state right away instead of asking the server to
   // re-render the whole page; a new month (new props) replaces it.
   const [rows, setRows] = useState(serverRows);
@@ -64,12 +65,18 @@ export default function LedgerTable({ floors, rows: serverRows, period }: { floo
   async function call(key: string, url: string, init: RequestInit, done?: string, apply?: () => void) {
     setBusy(key);
     setMsg(null);
-    const res = await authFetch(url, { ...init, headers: { "Content-Type": "application/json" } });
-    const body = await res.json().catch(() => ({}));
-    setBusy("");
-    setMsg({ ok: res.ok, text: body.message ?? (res.ok ? done ?? "Saved." : body.error ?? "Something went wrong.") });
-    if (res.ok) apply?.();
-    return res.ok;
+    try {
+      const res = await authFetch(url, { ...init, headers: { "Content-Type": "application/json" } });
+      const body = await res.json().catch(() => ({}));
+      setMsg({ ok: res.ok, text: body.message ?? (res.ok ? done ?? "Saved." : body.error ?? "Something went wrong.") });
+      if (res.ok) apply?.();
+      return res.ok;
+    } catch {
+      setMsg({ ok: false, text: "Network problem. Try again." });
+      return false;
+    } finally {
+      setBusy("");
+    }
   }
   const today = () => new Date().toLocaleDateString("en-IN");
   const patchRow = (id: string, fn: (r: LedgerRow) => LedgerRow) => setRows((all) => all.map((r) => (r.id === id ? fn(r) : r)));
@@ -81,6 +88,8 @@ export default function LedgerTable({ floors, rows: serverRows, period }: { floo
       () => patchRow(r.id, (x) => ({ ...x, bills: x.bills.map((b) => (b.id === billId ? { ...b, paid, paidOn: paid ? today() : null } : b)) })));
   const notifyRent = (r: LedgerRow) =>
     call(`nr-${r.id}`, `/api/allocations/${r.id}/notify`, { method: "POST", body: JSON.stringify({ kind: "RENT", period }) });
+  const notifyBills = (r: LedgerRow) =>
+    call(`nbs-${r.id}`, `/api/allocations/${r.id}/notify`, { method: "POST", body: JSON.stringify({ kind: "BILLS", period }) });
   const notifyBill = (r: LedgerRow, billId: string) =>
     call(`nb-${billId}`, `/api/allocations/${r.id}/notify`, { method: "POST", body: JSON.stringify({ kind: "BILL", billId }) });
 
@@ -89,6 +98,7 @@ export default function LedgerTable({ floors, rows: serverRows, period }: { floo
   return (
     <div>
       {msg && <p role="status" className={`mb-4 rounded-2xl px-5 py-3 text-sm ${msg.ok ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>{msg.text}</p>}
+      <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex flex-wrap gap-2">
         {floors.map((f) => {
           const unpaid = rows.filter((r) => r.floor === f && !r.rentPaid).length;
@@ -99,6 +109,8 @@ export default function LedgerTable({ floors, rows: serverRows, period }: { floo
             </button>
           );
         })}
+      </div>
+        <PaymentHistory propertyId={propertyId} floor={floor} />
       </div>
 
       <div className="mt-4 overflow-x-auto rounded-2xl bg-cream/40">
@@ -129,9 +141,14 @@ export default function LedgerTable({ floors, rows: serverRows, period }: { floo
                     <span className={`mt-1 block text-xs ${unpaidBills ? "text-destructive" : "text-muted-foreground"}`}>{r.bills.length === 0 ? "No bills" : unpaidBills ? `${unpaidBills} unpaid` : "All paid"}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <button type="button" disabled={r.rentPaid || busy === `nr-${r.id}`} onClick={() => notifyRent(r)} className={btn}>
-                      <Bell className="h-4 w-4" />{busy === `nr-${r.id}` ? "Sending…" : "Notify for payment"}
-                    </button>
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <button type="button" disabled={r.rentPaid || busy === `nr-${r.id}`} onClick={() => notifyRent(r)} className={btn}>
+                        <Bell className="h-4 w-4" />{busy === `nr-${r.id}` ? "Sending…" : "Notify rent"}
+                      </button>
+                      <button type="button" disabled={(unpaidBills === 0 && r.rentPaid) || busy === `nbs-${r.id}`} onClick={() => notifyBills(r)} className={btn}>
+                        <Bell className="h-4 w-4" />{busy === `nbs-${r.id}` ? "Sending…" : "Notify all bills"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -151,7 +168,7 @@ export default function LedgerTable({ floors, rows: serverRows, period }: { floo
       </div>
 
       {mounted && editRow && (
-        <Modal title="Edit rent status" sub={`${editRow.name} · ${editRow.flat} · ${monthLabel(period)}`} onClose={() => setEditFor(null)}>
+        <Modal title="Edit rent status" sub={`${editRow.name} · Flat ${editRow.flat} · ${monthLabel(period)}`} onClose={() => setEditFor(null)}>
           <p className="mb-4 text-sm text-muted-foreground">Rent {inr(editRow.rent)} for {monthLabel(period)} is currently <strong className="text-foreground">{editRow.rentPaid ? "paid" : "unpaid"}</strong>.</p>
           <div className="flex gap-3">
             <button type="button" disabled={editRow.rentPaid || !!busy} onClick={async () => { if (await setRent(editRow, true)) setEditFor(null); }} className="rounded-full bg-primary px-6 py-3 text-primary-foreground hover:bg-ink disabled:opacity-40">Mark as paid</button>
@@ -161,7 +178,7 @@ export default function LedgerTable({ floors, rows: serverRows, period }: { floo
       )}
 
       {mounted && billsRow && (
-        <Modal title="Bills" sub={`${billsRow.name} · ${billsRow.flat}`} onClose={() => setBillsFor(null)}>
+        <Modal title="Bills" sub={`${billsRow.name} · Flat ${billsRow.flat}`} onClose={() => setBillsFor(null)}>
           {msg && <p role="status" className={`mb-4 rounded-2xl px-4 py-3 text-sm ${msg.ok ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>{msg.text}</p>}
           {billsRow.bills.length === 0 ? (
             <p className="text-sm text-muted-foreground">No bills have been added for this tenant.</p>

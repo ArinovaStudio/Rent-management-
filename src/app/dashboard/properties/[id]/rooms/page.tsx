@@ -11,13 +11,12 @@ import BuildingAllocationForm, { type BuildingFloor } from "./building-allocatio
 import SharedPersons from "./shared-persons";
 import { splitMain } from "@/lib/main-tenant";
 import BuildingResidentsTable, { type BuildingResidentRow } from "./building-residents-table";
-import BuildingHistory from "./building-history";
 import AllocationActions from "./allocation-actions";
 import RoomOccupants, { type OccupantFloor } from "./room-occupants";
 import AvailabilityManager from "./availability-manager";
 import GenerateBill, { type BillRoom } from "./generate-bill";
 import { roomFloor } from "@/lib/room-category";
-import { headcount, occupancy } from "@/lib/occupancy";
+import { flatOpen, headcount, isShareableUnit, occupancy } from "@/lib/occupancy";
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 const catName = (c: { capacity: number; ac: boolean }) => `${c.capacity}-seater${c.ac ? " AC" : ""}`;
@@ -36,7 +35,7 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
         orderBy: { createdAt: "asc" },
         select: {
           id: true, label: true, capacity: true, ac: true, rent: true, floor: true, roomType: true,
-          bedrooms: true, isActive: true, inactiveNote: true,
+          bedrooms: true, isActive: true, inactiveNote: true, closedToNew: true,
           allocations: {
             where: { status: "ACTIVE" },
             orderBy: { createdAt: "desc" },
@@ -98,11 +97,11 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
   const buildingFloors: BuildingFloor[] = floorNos.map((fl) => ({
     floor: fl,
     flats: liveRooms.filter((r) => (r.floor ?? 0) === fl).map((r) => ({
-      id: r.id, label: r.label, shareable: r.roomType === "SHAREABLE", rent: r.rent, living: r.allocations.length, bhk: r.bedrooms,
+      id: r.id, label: r.label, shareable: r.roomType === "SHAREABLE", rent: r.rent, living: r.allocations.length, bhk: r.bedrooms, closed: !flatOpen(r, r.allocations.length),
     })),
   }));
   const flatCount = liveRooms.length;
-  const vacantFlats = liveRooms.filter((r) => r.allocations.length === 0).length;
+  const vacantFlats = liveRooms.filter((r) => flatOpen(r, r.allocations.length)).length;
 
   // ---- Building residents: grouped floor -> flat. A shareable flat shows its main tenant; friends sit behind a button. ----
   const byFlat = (x: { label: string }, y: { label: string }) => x.label.localeCompare(y.label, undefined, { numeric: true });
@@ -117,7 +116,8 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
   const tableRows: BuildingResidentRow[] = property.rooms.slice().sort(byFlat).flatMap((room) => {
     const { main } = splitMain(room.allocations);
     return main ? [{
-      id: main.id, name: main.fullName, phone: main.phone, email: main.email, floor: room.floor ?? 0, flat: room.label, bhk: room.bedrooms,
+      id: main.id, name: main.fullName, phone: main.phone, email: main.email, floor: room.floor ?? 0, flat: room.label.replace(/^flat\s+/i, ""), bhk: room.bedrooms,
+      roomId: room.id, shared: isShareableUnit(room), vacant: flatOpen(room, room.allocations.length),
       people: room.allocations.length, rent: main.monthlyRent, moveIn: main.moveInDate.toLocaleDateString("en-IN"),
     }] : [];
   });
@@ -278,19 +278,19 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                 <Panel key={fl}>
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-lg font-semibold">Floor {fl}</h2>
-                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs text-primary">{list.filter((r) => r.isActive && r.allocations.length === 0).length} vacant</span>
+                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs text-primary">{list.filter((r) => r.isActive && flatOpen(r, r.allocations.length)).length} vacant</span>
                   </div>
                   <ul className="mt-4 space-y-2">
                     {list.map((r) => {
                       const people = headcount(r.allocations);
                       const tenant = r.allocations.find((a) => a.monthlyRent > 0) ?? r.allocations[0];
                       return (
-                        <li key={r.id} className="flex items-center justify-between gap-3 rounded-2xl bg-cream/60 px-4 py-2.5 text-sm">
+                        <li key={r.id} className={`flex items-center justify-between gap-3 rounded-2xl bg-cream/60 px-4 py-2.5 text-sm ${r.isActive && !flatOpen(r, people) ? "opacity-60" : ""}`}>
                           <span className="min-w-0">
                             <span className="block font-medium">{r.label}</span>
                             <span className="block truncate text-xs text-muted-foreground">{r.bedrooms ? `${r.bedrooms} BHK · ` : ""}{r.roomType === "SHAREABLE" ? "Shareable" : "Single"} · {inr(r.rent)} / month{tenant ? ` · ${tenant.fullName}` : ""}</span>
                           </span>
-                          <span className={`shrink-0 rounded-full px-3 py-1 text-xs ${!r.isActive ? "bg-destructive/10 text-destructive" : people === 0 ? "bg-background" : "bg-primary/10 text-primary"}`}>{!r.isActive ? "Inactive" : people === 0 ? "Vacant" : r.roomType === "SHAREABLE" ? `${people} ${people === 1 ? "person" : "people"}` : "Rented"}</span>
+                          <span className={`shrink-0 rounded-full px-3 py-1 text-xs ${!r.isActive ? "bg-destructive/10 text-destructive" : people === 0 || (r.roomType === "SHAREABLE" && !r.closedToNew) ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{!r.isActive ? "Inactive" : people === 0 ? "Vacant" : r.roomType === "SHAREABLE" ? (r.closedToNew ? "Non vacant" : `${people} ${people === 1 ? "person" : "people"} · Vacant`) : "Non vacant"}</span>
                         </li>
                       );
                     })}
@@ -378,9 +378,11 @@ export default async function PropertyRoomsPage({ params }: { params: Promise<{ 
                   <h2 className="text-lg font-semibold">Building residents</h2>
                   <p className="text-sm text-muted-foreground">Main tenant of each flat, floor by floor.</p>
                 </div>
-                <BuildingHistory propertyId={property.id} count={historyCount} />
               </div>
-              <BuildingResidentsTable floors={floorNos} rows={tableRows} />
+              <BuildingResidentsTable
+                floors={floorNos} rows={tableRows} propertyId={property.id} historyCount={historyCount} canEditStatus
+                flats={property.rooms.slice().sort(byFlat).map((r) => ({ id: r.id, label: r.label, floor: r.floor ?? 0 }))}
+              />
             </Panel>
           </>
         )}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { parseExperience } from "@/lib/experience";
 import { normalizeMobile } from "@/lib/owner-validation";
 import { checkFile, removeFile, removeSensitiveFile, saveFile, saveSensitiveFile } from "@/lib/uploads";
 
@@ -19,6 +20,8 @@ export async function applyPersonUpdate(req: Request, userId: string) {
   if (!phone) e.phone = "Enter a valid 10-digit mobile number.";
   const age = str("age") ? Number(str("age")) : null;
   if (age !== null && (!Number.isInteger(age) || age < 18 || age > 100)) e.age = "Enter an age between 18 and 100.";
+  const exp = parseExperience(fd);
+  Object.assign(e, exp.errors);
   const addressLine1 = str("addressLine1");
   const addressLine2 = str("addressLine2");
   const city = str("city");
@@ -53,7 +56,7 @@ export async function applyPersonUpdate(req: Request, userId: string) {
       prisma.user.update({ where: { id: userId }, data: { name } }),
       prisma.ownerProfile.update({
         where: { userId },
-        data: { phone: phone!, age, addressLine1, addressLine2: addressLine2 || null, city, state, postalCode, ...(photoPath ? { photoPath } : {}) },
+        data: { phone: phone!, age, appointedAt: exp.appointedAt, pastExperienceMonths: exp.pastMonths, addressLine1, addressLine2: addressLine2 || null, city, state, postalCode, ...(photoPath ? { photoPath } : {}) },
       }),
       ...(docFile && doc && !("error" in doc)
         ? [

@@ -111,6 +111,7 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
           </>
         )}
         {canEdit && <Link className={btn} href={`${base}/edit`}>Edit</Link>}
+        {canEdit && <Link className={btn} href={`${base}/owners`}>Owner Details</Link>}
         {canEdit && <Link className={btn} href={`${base}/managers`}>Managers</Link>}
         {p.mapUrl && <a className={btn} href={p.mapUrl} target="_blank" rel="noreferrer">View on map</a>}
         {isManager && (
@@ -148,10 +149,10 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
               <h2 className="mb-4 text-xl font-semibold">Floors</h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="text-xs text-muted-foreground"><tr><th className="pb-2 font-normal">Floor</th><th className="pb-2 font-normal">{p.type === "BUILDING" ? "Flats" : "Rooms"}</th><th className="pb-2 font-normal">Switched On</th><th className="pb-2 font-normal">Living</th><th className="pb-2 font-normal">Rent / month</th></tr></thead>
+                  <thead className="text-xs text-muted-foreground"><tr><th className="pb-2 font-normal">Floor</th><th className="pb-2 font-normal">{p.type === "BUILDING" ? "Flats" : "Rooms"}</th><th className="pb-2 font-normal">Active Flats</th><th className="pb-2 font-normal">Living</th><th className="pb-2 font-normal">Rent / month</th></tr></thead>
                   <tbody>
                     {floorRows.map((f) => (
-                      <tr key={f.fl} className="border-t border-cream"><td className="py-2">Floor {f.fl}</td><td>{f.count}</td><td>{f.on}/{f.count}</td><td>{f.living}</td><td>{f.rent}</td></tr>
+                      <tr key={f.fl} className="border-t border-cream"><td className="py-2">{f.fl}</td><td>{f.count}</td><td>{f.on}/{f.count}</td><td>{f.living}</td><td>{f.rent}</td></tr>
                     ))}
                   </tbody>
                 </table>

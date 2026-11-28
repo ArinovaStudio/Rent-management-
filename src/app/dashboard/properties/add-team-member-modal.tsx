@@ -1,5 +1,6 @@
 "use client";
 
+import ExperienceFields from "./experience-fields";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, X } from "lucide-react";
@@ -104,6 +105,7 @@ export default function AddTeamMemberModal({
               <F label="Age"><input className="field" name="age" type="number" inputMode="numeric" min={18} max={100} placeholder="e.g. 35" />{fe("age")}</F>
               <F label="Email" req><input className="field" name="email" type="email" placeholder="e.g. rahul@example.com" required />{fe("email")}</F>
               <F label="Mobile number" req><input className="field" name="phone" type="tel" placeholder="e.g. 98765 43210" required />{fe("phone")}</F>
+              <ExperienceFields fe={fe} />
               <F label="Temporary password" req wide><PasswordInput className="field" name="password" minLength={8} placeholder="At least 8 characters" required />{fe("password")}</F>
 
               <p className="mt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:col-span-2">Identity &amp; address <span className="font-normal normal-case">· only the last 4 characters of the ID number are stored</span></p>

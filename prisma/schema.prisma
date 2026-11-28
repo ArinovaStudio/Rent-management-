@@ -143,6 +143,9 @@ model OwnerProfile {
   // Optional extras for co-owners / managers created by an admin. photoPath is relative to /uploads, e.g. images/people/ab12.jpg
   age       Int?
   photoPath String?
+  // Co-owners / managers: when they were appointed, and past experience in months (null = none). Experience shown = past + time since appointed.
+  appointedAt          DateTime?
+  pastExperienceMonths Int?
 
   // Step 2: identity
   idType         IdType?
@@ -316,6 +319,7 @@ model Room {
   images           Json     @default("[]")
   isActive         Boolean  @default(true) // false = not open for new residents (e.g. under construction)
   inactiveNote     String?
+  closedToNew      Boolean  @default(false) // Shared flat only: admin marked it "Non vacant", so no more residents can be added
   createdAt  DateTime @default(now())
   allocations Allocation[]
   issues Issue[]

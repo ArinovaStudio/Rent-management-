@@ -36,3 +36,8 @@ export function occupancyText(p: OccProperty, rooms: OccRoom[]) {
   }
   return `Occupancy ${occ}/${cap}${full ? " · no rooms available" : ""}`;
 }
+
+// Building flat availability for new residents. A single flat is Non vacant once rented. A shared flat stays Vacant
+// (more people can be added) until an admin marks it Non vacant; that mark only counts while someone lives there.
+export const flatOpen = (r: { roomType?: string | null; capacity: number; closedToNew?: boolean }, living: number) =>
+  isShareableUnit(r) ? !(r.closedToNew && living > 0) : living === 0;

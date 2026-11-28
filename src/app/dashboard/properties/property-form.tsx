@@ -405,9 +405,9 @@ export default function PropertyForm({ initial, owners, role, listedBy, property
           <p className="text-muted-foreground">{editing ? initial!.name : "Fill in every detail tenants see on the listing page."}</p>
         </div>
         <Link href={backTo} className="rounded-full bg-background px-6 py-3 font-medium shadow-sm ring-1 ring-black/15">Cancel</Link>
-        <button disabled={busy} className="rounded-full bg-primary px-6 py-3 text-primary-foreground hover:bg-ink disabled:opacity-60">
+        {/* <button disabled={busy} className="rounded-full bg-primary px-6 py-3 text-primary-foreground hover:bg-ink disabled:opacity-60">
           {busy ? "Saving…" : editing ? "Update property" : "Create property"}
-        </button>
+        </button> */}
       </div>
 
       {error && <p role="alert" className="mb-6 rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">{error}</p>}

@@ -6,6 +6,7 @@ import { checkFile, saveFile } from "@/lib/uploads";
 import { canOperateProperty } from "@/lib/property-access";
 import { roomFloor } from "@/lib/room-category";
 import { notify } from "@/lib/mailer";
+import { normalizeMobile } from "@/lib/owner-validation";
 
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status });
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
@@ -84,13 +85,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const floor = Number(fd.get("floor"));
 
   const fullName = String(fd.get("fullName") ?? "").trim();
-  const phone = String(fd.get("phone") ?? "").trim();
+  const rawPhone = String(fd.get("phone") ?? "").trim();
+  const phone = normalizeMobile(rawPhone) ?? "";
   const email = String(fd.get("email") ?? "").trim().toLowerCase();
   const moveInDate = new Date(String(fd.get("moveInDate") ?? ""));
   const securityDeposit = Number(fd.get("securityDeposit") || 0);
 
   const files = fd.getAll("documents").filter((f): f is File => f instanceof File && f.size > 0);
-
+  
+  if (rawPhone && !phone) return fail("Enter a valid 10-digit mobile number.");
+  
   if (!fullName || !phone || !email || !Number.isFinite(moveInDate.getTime())) {
     return fail("Name, phone, email and a valid move-in date are required.");
   }
@@ -100,7 +104,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   if (!Number.isInteger(securityDeposit) || securityDeposit < 0) return fail("Enter a valid security deposit.");
   if (!/^\S+@\S+\.\S+$/.test(email)) return fail("Enter a valid email address.");
-  if (files.length > 8) return fail("Upload a maximum of 8 documents.");
+  if (files.length === 0) return fail("ID proof is required. Upload one file.");
+  if (files.length > 1) return fail("Upload one ID proof only.");
   for (const file of files) {
     const error = checkFile(file, "doc");
     if (error) return fail(error);
@@ -117,7 +122,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (new Set(ids).size !== ids.length) return fail("A flat was selected twice.");
     for (const f of flatsIn) {
       const rs = Array.isArray(f.residents) ? f.residents : [];
-      f.residents = rs.slice(0, 100).map((r) => ({ fullName: String(r.fullName ?? "").trim(), phone: String(r.phone ?? "").trim(), email: String(r.email ?? "").trim().toLowerCase() }));
+      f.residents = rs.slice(0, 100).map((r) => ({ fullName: String(r.fullName ?? "").trim(), phone: normalizeMobile(String(r.phone ?? "").trim()) ?? "", email: String(r.email ?? "").trim().toLowerCase() }));
       if (f.residents.some((r) => !r.fullName || !r.phone || (r.email && !/^\S+@\S+\.\S+$/.test(r.email)))) return fail("Every added resident needs a name and phone (and a valid email if given).");
     }
     try {
@@ -125,7 +130,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const rooms = await tx.room.findMany({
           where: { propertyId, id: { in: ids }, isActive: true },
           select: {
-            id: true, label: true, rent: true, roomType: true, floor: true, bedrooms: true,
+            id: true, label: true, rent: true, roomType: true, floor: true, bedrooms: true, closedToNew: true,
             allocations: { where: { status: "ACTIVE" }, select: { isHousemate: true } },
           },
         });
@@ -136,6 +141,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           const shareable = room.roomType === "SHAREABLE";
           if (!shareable && room.allocations.length > 0) throw new Error(`FLAT_TAKEN:${room.label}`);
           if (!shareable && f.residents.length > 0) throw new Error("NOT_SHAREABLE");
+          // Admin marked this shared flat Non vacant: no more residents. A flag left over on an empty flat is cleared.
+          if (shareable && room.closedToNew) {
+            if (room.allocations.length > 0) throw new Error(`FLAT_TAKEN:${room.label}`);
+            await tx.room.update({ where: { id: room.id }, data: { closedToNew: false } });
+          }
           // The first person in a flat is its main tenant (rent, bills, one link). Anyone added later shares that link.
           const hasMain = room.allocations.some((a) => !a.isHousemate);
           const category = shareable ? "Shareable flat" : "Single flat";

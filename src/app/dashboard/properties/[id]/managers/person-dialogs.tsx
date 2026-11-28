@@ -8,6 +8,7 @@ import { toast } from "@/lib/toast";
 import { ID_TYPE_LABEL, type IdTypeValue } from "@/lib/owner-validation";
 import PhotoPick from "@/components/PhotoPick";
 import { F, FileDrop } from "../../property-sections";
+import ExperienceFields from "../../experience-fields";
 
 export type PersonKind = "owner" | "coOwner" | "manager";
 export type PersonDoc = { id: string; name: string; type: string };
@@ -15,6 +16,8 @@ export type Person = {
   id: string; kind: PersonKind; name: string; email: string; phone: string | null; age: number | null; photoPath: string | null; verified: boolean;
   addressLine1: string | null; addressLine2: string | null; city: string | null; state: string | null; postalCode: string | null;
   idType: string | null; idNumberMasked: string | null;
+  // experience: ready text for the card. appointedAt (YYYY-MM-DD) and pastMonths prefill the edit form.
+  experience?: string | null; appointedAt?: string | null; pastMonths?: number | null;
   // editable: Super Admin, or the Property Admin who created this person. documents: only filled for people allowed to open them.
   editable?: boolean; documents?: PersonDoc[];
 };
@@ -104,6 +107,8 @@ export function PersonDetailsDialog({ person: p, onClose, onEdit }: { person: Pe
           <Row label="Full name" value={p.name} />
           <Row label="Role" value={KIND_LABEL[p.kind]} />
           <Row label="Age" value={p.age ? `${p.age} years` : null} />
+          <Row label="Appointed on" value={p.appointedAt ? new Date(p.appointedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : null} />
+          <Row label="Experience" value={p.experience?.replace(/ experience$/, "")} />
           <Row label="Mobile number" value={p.phone} />
           <div className="sm:col-span-2"><Row label="Email" value={p.email} /></div>
           <div className="sm:col-span-2"><Row label="Address" value={address} /></div>
@@ -151,6 +156,7 @@ export function PersonEditDialog({ propertyId, endpoint, person: p, onClose, onS
             <F label="Age"><input className="field" name="age" type="number" inputMode="numeric" min={18} max={100} defaultValue={p.age ?? ""} placeholder="e.g. 35" />{fe("age")}</F>
             <F label="Email"><input className="field opacity-60" value={p.email} disabled readOnly /></F>
             <F label="Mobile number" req><input className="field" name="phone" type="tel" defaultValue={p.phone ?? ""} placeholder="e.g. 98765 43210" required />{fe("phone")}</F>
+            <ExperienceFields appointedAt={p.appointedAt} pastMonths={p.pastMonths} fe={fe} />
             <F label="Street address" req wide><input className="field" name="addressLine1" defaultValue={p.addressLine1 ?? ""} placeholder="e.g. 12, Gandhi Nagar" required />{fe("addressLine1")}</F>
             <F label="Address line 2 (optional)" wide><input className="field" name="addressLine2" defaultValue={p.addressLine2 ?? ""} placeholder="e.g. Near City Mall" />{fe("addressLine2")}</F>
             <F label="City" req><input className="field" name="city" defaultValue={p.city ?? ""} placeholder="e.g. Ratlam" required />{fe("city")}</F>

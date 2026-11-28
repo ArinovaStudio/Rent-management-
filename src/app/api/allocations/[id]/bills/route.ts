@@ -17,7 +17,7 @@ async function load(id: string) {
   return { me, allocation };
 }
 
-// Generates a new bill. Older bills are never replaced.
+// Generates a new bill. One bill per type per month: if it already exists, the caller must edit it (PATCH) instead.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const g = await load(id);
@@ -44,7 +44,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const taxPct = b.taxPct === undefined || b.taxPct === null ? 0 : cleanPct(b.taxPct);
   if (taxPct === null) return NextResponse.json({ error: "Enter a tax between 0 and 100." }, { status: 400 });
 
-  // Every generated bill is its own record, so earlier bills stay in the resident's history
+  // Never overwrite or double up: a second bill for the same month and type is refused
+  const dup = await prisma.residentBill.findFirst({ where: { allocationId: id, type, period }, select: { id: true } });
+  if (dup) return NextResponse.json({ error: "A bill of this type already exists for this month. Edit that bill instead.", existingId: dup.id }, { status: 409 });
   const paid = b.paid === true;
   const bill = await prisma.residentBill.create({
     data: { allocationId: id, type, period, amount, taxPct, note: note || null, paid, paidAt: paid ? new Date() : null, createdById: g.me.id },
@@ -61,15 +63,26 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   return NextResponse.json({ ok: true });
 }
 
-// Changes only the paid / unpaid status of one bill
+// Changes the paid / unpaid status of one bill, or (when `amount` is sent) edits an unpaid bill's amount, tax and note
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const g = await load(id);
   if ("error" in g) return g.error;
   const b = await req.json().catch(() => ({}));
-  if (typeof b.paid !== "boolean") return NextResponse.json({ error: "Choose paid or unpaid." }, { status: 400 });
   const bill = await prisma.residentBill.findFirst({ where: { id: String(b.billId ?? ""), allocationId: id }, select: { id: true, paid: true, paidAt: true } });
   if (!bill) return NextResponse.json({ error: "Bill not found." }, { status: 404 });
+
+  if (b.amount !== undefined) {
+    if (bill.paid) return NextResponse.json({ error: "A paid bill can't be edited." }, { status: 409 });
+    const amount = Number(b.amount);
+    if (String(b.amount).trim() === "" || !Number.isInteger(amount) || amount < 0 || amount > 10_000_000) return NextResponse.json({ error: "Enter the bill amount in whole rupees." }, { status: 400 });
+    const taxPct = b.taxPct === undefined || b.taxPct === null ? 0 : cleanPct(b.taxPct);
+    if (taxPct === null) return NextResponse.json({ error: "Enter a tax between 0 and 100." }, { status: 400 });
+    const note = typeof b.note === "string" ? b.note.trim().slice(0, 300) : "";
+    return NextResponse.json(await prisma.residentBill.update({ where: { id: bill.id }, data: { amount, taxPct, note: note || null } }));
+  }
+
+  if (typeof b.paid !== "boolean") return NextResponse.json({ error: "Choose paid or unpaid." }, { status: 400 });
   const paidAt = b.paid ? (bill.paid ? bill.paidAt ?? new Date() : new Date()) : null;
   const updated = await prisma.residentBill.update({ where: { id: bill.id }, data: { paid: b.paid, paidAt } });
   return NextResponse.json(updated);

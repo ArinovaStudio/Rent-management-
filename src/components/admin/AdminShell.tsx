@@ -15,7 +15,7 @@ type Item = { title: string; url: string; icon: typeof Inbox; superOnly?: boolea
 // Items marked `soon` are Najm sections we copied for layout only; wire them up (or delete them) later.
 // Managers / co-owners are created from the property form, so there is no separate Users nav item.
 const NAV: Item[] = [
-  { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
+  { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard },
   { title: "Properties", url: "/dashboard/properties", icon: Building2 },
   { title: "My requests", url: "/dashboard/requests", icon: Inbox, hideFor: ["SUPER_ADMIN", "PROPERTY_MANAGER"] },
   { title: "Issues", url: "/dashboard/issues", icon: AlertCircle },
@@ -32,7 +32,7 @@ export function AdminShell({ role, name, children }: { role: string; name?: stri
   const [collapsed, setCollapsed] = useState(false);
   const [open, setOpen] = useState(false);
   const isSuper = role === "SUPER_ADMIN";
-  const items = NAV.filter((n) => (!n.superOnly || isSuper) && !n.hideFor?.includes(role)).map((n) => (n.title === "Properties" ? { ...n, url: propertiesBase(role) } : n.title === "Dashboard" ? { ...n, url: isSuper ? "/admin" : "/dashboard" } : n));  // Most specific match wins, so /dashboard/admin/kyc doesn't also light up "Dashboard".
+  const items = NAV.filter((n) => (!n.superOnly || isSuper) && !n.hideFor?.includes(role)).map((n) => (n.title === "Properties" ? { ...n, url: propertiesBase(role) } : n.title === "Dashboard" ? { ...n, url: isSuper ? "/admin/dashboard" : "/dashboard" } : n));  // Most specific match wins, so /dashboard/admin/kyc doesn't also light up "Dashboard".
   const active = items.filter((n) => !n.soon && (path === n.url || path.startsWith(`${n.url}/`))).sort((a, b) => b.url.length - a.url.length)[0]?.url;
   const label = collapsed ? "lg:hidden" : "";
 
@@ -42,7 +42,7 @@ export function AdminShell({ role, name, children }: { role: string; name?: stri
 
       <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-background transition-all lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"} ${collapsed ? "lg:w-[4.5rem]" : ""}`}>
         <div className="px-3 py-5">
-          <Link href={isSuper ? "/admin" : "/dashboard"} className="flex items-center gap-2 text-xl font-medium tracking-tight">
+          <Link href={isSuper ? "/admin/dashboard" : "/dashboard"} className="flex items-center gap-2 text-xl font-medium tracking-tight">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">R</span>
             <span className={label}>Rental <span className="text-muted-foreground">{isSuper ? "Admin" : "Portal"}</span></span>
           </Link>

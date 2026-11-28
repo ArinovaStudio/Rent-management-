@@ -2,8 +2,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSoftRefresh } from "@/lib/use-soft-refresh";
-import { Check, Copy, FileText, Loader2, Plus, UploadCloud, UserPlus, X } from "lucide-react";
+import { Check, Copy, Loader2, UserPlus, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
+import IdProofDrop from "@/components/IdProofDrop";
 
 export type CatSlot = { capacity: number; ac: boolean; rent: number; beds: number; occupied: number };
 export type FloorSlot = { floor: number; cats: CatSlot[] };
@@ -11,10 +12,8 @@ export type FloorSlot = { floor: number; cats: CatSlot[] };
 export type WholeFlat = { rent: number; capacity: number; occupied: number; open: boolean; unlimited?: boolean };
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 export const catName = (c: { capacity: number; ac: boolean }) => `${c.capacity}-seater${c.ac ? " AC" : ""}`;
-const MAX_FILES = 8;
 const MAX_MB = 10;
 const OK_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
-const size = (b: number) => (b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
 export default function AllocationForm({ propertyId, mode, showFloors, floors, whole }: {
   propertyId: string;
@@ -42,7 +41,6 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
   const [residentUrl, setResidentUrl] = useState("");
   const [sharedDone, setSharedDone] = useState(false); // added as a person sharing the flat: no link of their own
   const [copied, setCopied] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   const curFloor = floors.find((f) => f.floor === floor);
@@ -75,17 +73,17 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
     for (const f of Array.from(list)) {
       if (!OK_TYPES.includes(f.type)) { setError(`${f.name}: only PDF, JPG, PNG or WebP files are allowed.`); continue; }
       if (f.size > MAX_MB * 1024 * 1024) { setError(`${f.name} is larger than ${MAX_MB} MB.`); continue; }
-      if (next.length >= MAX_FILES) { setError(`You can upload up to ${MAX_FILES} documents.`); break; }
-      next.push(f);
+      next.splice(0, next.length, f); // one ID proof only: a new file replaces the old one
+      break;
     }
     setFiles(next);
-    if (fileRef.current) fileRef.current.value = "";
   }
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (isPg && !selCat) return setError("Select a room category first.");
     if (!isPg && !whole?.open) return setError("This flat is already rented.");
+    if (files.length === 0) return setError("Upload the person's ID proof.");
     setBusy(true);
     setError("");
 
@@ -210,32 +208,8 @@ export default function AllocationForm({ propertyId, mode, showFloors, floors, w
 
               {/* Step 3: documents */}
               <section>
-                <p className="mb-3 text-sm font-semibold">3 · Documents <span className="font-normal text-muted-foreground">(optional)</span></p>
-                <div
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); }}
-                  className="rounded-2xl border-2 border-dashed border-cream bg-cream/40 p-5 text-center"
-                >
-                  <UploadCloud className="mx-auto h-8 w-8 text-primary" />
-                  <p className="mt-2 text-sm font-medium">Drag files here or</p>
-                  <button type="button" onClick={() => fileRef.current?.click()} className="mt-2 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm text-primary-foreground hover:bg-ink">
-                    <Plus className="h-4 w-4" />Choose files
-                  </button>
-                  <p className="mt-2 text-xs text-muted-foreground">ID proof, agreement etc. · PDF, JPG, PNG, WebP · max {MAX_MB} MB each · up to {MAX_FILES} files</p>
-                  <input ref={fileRef} type="file" multiple accept={OK_TYPES.join(",")} className="sr-only" onChange={(e) => addFiles(e.target.files)} />
-                </div>
-                {files.length > 0 && (
-                  <ul className="mt-3 space-y-2">
-                    {files.map((f, i) => (
-                      <li key={`${f.name}-${i}`} className="flex items-center gap-3 rounded-2xl bg-cream/60 px-4 py-2.5 text-sm">
-                        <FileText className="h-4 w-4 shrink-0 text-primary" />
-                        <span className="min-w-0 flex-1 truncate">{f.name}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">{size(f.size)}</span>
-                        <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, k) => k !== i))}><X className="h-4 w-4" /></button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <p className="mb-3 text-sm font-semibold">3 · ID Proof <span className="font-normal text-muted-foreground">(required)</span></p>
+                <IdProofDrop file={files[0] ?? null} accept={OK_TYPES.join(",")} maxMb={MAX_MB} onPick={(l) => { setError(""); addFiles(l); }} onClear={() => setFiles([])} />
               </section>
 
               {error && <p role="alert" className="rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">{error}</p>}

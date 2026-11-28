@@ -23,7 +23,7 @@ export type InvoiceData = {
 
 // Staff-only extras for InvoiceView
 // draft: the invoice is a new bill that staff are filling in (units and rate), then saving.
-export type DraftBill = { allocationId: string; type: "ELECTRICITY" | "WATER"; category: string; initialPeriod: string; minPeriod: string; maxPeriod: string }; // months allowed: move-in month up to this month
+export type DraftBill = { allocationId: string; type: "ELECTRICITY" | "WATER"; category: string; initialPeriod: string; minPeriod: string; maxPeriod: string; existing?: { id: string; period: string; paid: boolean; taxPct: number; units: string; rate: string }[];}; // months allowed: move-in month up to this month
 // taxEdit: staff may change the tax % of each line. billId is set on a saved bill's own page.
 export type TaxEdit = { allocationId: string; billId?: string };
 

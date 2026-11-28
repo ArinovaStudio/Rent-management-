@@ -2,18 +2,17 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSoftRefresh } from "@/lib/use-soft-refresh";
-import { Check, Copy, FileText, Loader2, Plus, UploadCloud, UserPlus, X } from "lucide-react";
+import { Check, Copy, Loader2, Plus, UserPlus, X } from "lucide-react";
 import { authFetch } from "@/lib/fetch-auth";
+import IdProofDrop from "@/components/IdProofDrop";
 
-export type FlatSlot = { id: string; label: string; shareable: boolean; rent: number; living: number; bhk?: number | null };
+export type FlatSlot = { id: string; label: string; shareable: boolean; rent: number; living: number; bhk?: number | null; closed?: boolean };
 export type BuildingFloor = { floor: number; flats: FlatSlot[] };
 type Resident = { fullName: string; phone: string; email: string };
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
-const MAX_FILES = 8;
 const MAX_MB = 10;
 const OK_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
-const size = (b: number) => (b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 const lbl = "flex flex-col gap-2 text-sm";
 
 // Allocation for a Building. The tenant is entered once and can take several flats (on any floors) in one go;
@@ -25,7 +24,7 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
   useEffect(() => setMounted(true), []);
 
   const allFlats = floors.flatMap((f) => f.flats);
-  const isOpen = (f: FlatSlot) => f.shareable || f.living === 0; // a single flat takes one tenant; a shareable flat takes anyone
+  const isOpen = (f: FlatSlot) => !f.closed; // vacant: a single flat takes one tenant; a shared flat takes anyone until an admin marks it Non vacant
   const openCount = allFlats.filter(isOpen).length;
   const firstFloor = floors.find((f) => f.flats.some(isOpen))?.floor ?? floors[0]?.floor ?? 1;
   // picks[0] is the flat this person is being allocated to; the rest are other flats the same person rents.
@@ -38,7 +37,6 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
   const [done, setDone] = useState(false);
   const [links, setLinks] = useState<{ name: string; flat: string; url: string }[]>([]);
   const [copied, setCopied] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   const shown = more ? picks : picks.slice(0, 1);
@@ -67,11 +65,10 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
     for (const f of Array.from(list)) {
       if (!OK_TYPES.includes(f.type)) { setError(`${f.name}: only PDF, JPG, PNG or WebP files are allowed.`); continue; }
       if (f.size > MAX_MB * 1024 * 1024) { setError(`${f.name} is larger than ${MAX_MB} MB.`); continue; }
-      if (next.length >= MAX_FILES) { setError(`You can upload up to ${MAX_FILES} documents.`); break; }
-      next.push(f);
+      next.splice(0, next.length, f); // one ID proof only: a new file replaces the old one
+      break;
     }
     setFiles(next);
-    if (fileRef.current) fileRef.current.value = "";
   }
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -83,6 +80,7 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
         if (!r.fullName.trim() || !r.phone.trim()) return setError(`Flat ${f.label.replace(/^flat\s+/i, "")}: enter a name and phone for every resident you add.`);
       }
     }
+    if (files.length === 0) return setError("Upload the tenant's ID proof.");
     setBusy(true);
     setError("");
     const fd = new FormData(e.currentTarget);
@@ -211,26 +209,8 @@ export default function BuildingAllocationForm({ propertyId, floors }: { propert
               )}
 
               <section>
-                <p className="mb-3 text-sm font-semibold">{selected.some((f) => f.shareable) ? "4" : "3"} · Documents <span className="font-normal text-muted-foreground">(optional, kept for the tenant of each flat)</span></p>
-                <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); }} className="rounded-2xl border-2 border-dashed border-cream bg-cream/40 p-5 text-center">
-                  <UploadCloud className="mx-auto h-8 w-8 text-primary" />
-                  <p className="mt-2 text-sm font-medium">Drag files here or</p>
-                  <button type="button" onClick={() => fileRef.current?.click()} className="mt-2 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm text-primary-foreground hover:bg-ink"><Plus className="h-4 w-4" />Choose files</button>
-                  <p className="mt-2 text-xs text-muted-foreground">ID proof, agreement etc. · PDF, JPG, PNG, WebP · max {MAX_MB} MB each · up to {MAX_FILES} files</p>
-                  <input ref={fileRef} type="file" multiple accept={OK_TYPES.join(",")} className="sr-only" onChange={(e) => addFiles(e.target.files)} />
-                </div>
-                {files.length > 0 && (
-                  <ul className="mt-3 space-y-2">
-                    {files.map((f, i) => (
-                      <li key={`${f.name}-${i}`} className="flex items-center gap-3 rounded-2xl bg-cream/60 px-4 py-2.5 text-sm">
-                        <FileText className="h-4 w-4 shrink-0 text-primary" />
-                        <span className="min-w-0 flex-1 truncate">{f.name}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">{size(f.size)}</span>
-                        <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, k) => k !== i))}><X className="h-4 w-4" /></button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <p className="mb-3 text-sm font-semibold">{selected.some((f) => f.shareable) ? "4" : "3"} · ID Proof <span className="font-normal text-muted-foreground">(required, kept for the tenant of each flat)</span></p>
+                <IdProofDrop file={files[0] ?? null} accept={OK_TYPES.join(",")} maxMb={MAX_MB} onPick={(l) => { setError(""); addFiles(l); }} onClear={() => setFiles([])} />
               </section>
 
               {error && <p role="alert" className="rounded-2xl bg-destructive/10 px-5 py-3 text-sm text-destructive">{error}</p>}
